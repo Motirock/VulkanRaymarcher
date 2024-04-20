@@ -18,8 +18,9 @@ namespace VkUtils {
     enum Orientation {POSITIVE_X, NEGATIVE_X, POSITIVE_Y, NEGATIVE_Y, POSITIVE_Z, NEGATIVE_Z, NUMBER_OF_ORIENTATIONS};
 
     struct Vertex {
-        glm::vec2 pos;
-        glm::vec3 color;
+        glm::vec3 pos;
+        glm::vec2 texCoord;
+        uint32_t normalAndColor;
 
         static VkVertexInputBindingDescription getBindingDescription() {
             VkVertexInputBindingDescription bindingDescription{};
@@ -30,26 +31,47 @@ namespace VkUtils {
             return bindingDescription;
         }
 
-        static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-            std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+            std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
 
             attributeDescriptions[0].binding = 0;
             attributeDescriptions[0].location = 0;
-            attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
             attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
             attributeDescriptions[1].binding = 0;
             attributeDescriptions[1].location = 1;
-            attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-            attributeDescriptions[1].offset = offsetof(Vertex, color);
+            attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[1].offset = offsetof(Vertex, texCoord);
+
+            attributeDescriptions[2].binding = 0;
+            attributeDescriptions[2].location = 2;
+            attributeDescriptions[2].format = VK_FORMAT_R32_UINT;
+            attributeDescriptions[2].offset = offsetof(Vertex, normalAndColor);
 
             return attributeDescriptions;
         }
 
         bool operator==(const Vertex& other) const {
-            return pos == other.pos && color == other.color;
+            return pos == other.pos && texCoord == other.texCoord && normalAndColor == other.normalAndColor;
         }
     };
+
+    inline uint32_t packNormalAndColor(Orientation orientation, int r, int g, int b) {
+        uint32_t normalAndColor = orientation << 24;
+        normalAndColor = normalAndColor | (r << 16);
+        normalAndColor = normalAndColor | (g << 8);
+        normalAndColor = normalAndColor | b;
+        return normalAndColor;
+    }
+
+    inline uint32_t packNormalAndColor(Orientation orientation, float r, float g, float b) {
+        uint32_t normalAndColor = orientation << 24;
+        normalAndColor = normalAndColor | ((int) (r*255) << 16);
+        normalAndColor = normalAndColor | ((int) (g*255) << 8);
+        normalAndColor = normalAndColor | (int) (b*255);
+        return normalAndColor;
+    }
 }
 
 #endif
