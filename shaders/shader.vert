@@ -1,12 +1,34 @@
 #version 450
 
-layout(location = 0) in vec2 inPosition;
-layout(location = 1) in vec3 inColor;
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+    vec3 cameraPosition;
+} ubo;
 
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec2 inTexCoord;
+layout(location = 2) in int inNormalAndColor;
+
+layout(location = 0) out vec2 fragTexCoord;
+layout(location = 1) out flat vec3 normal;
+layout(location = 2) out vec3 fragColor;
+layout(location = 3) out float distanceFromCamera;
+
+vec3 normals[] = {
+    vec3(1.0f, 0.0f, 0.0f), 
+    vec3(-1.0f, 0.0f, 0.0f), 
+    vec3(0.0f, 1.0f, 0.0f), 
+    vec3(0.0f, -1.0f, 0.0f),
+    vec3(0.0f, 0.0f, 1.0f), 
+    vec3(0.0f, 0.0f, -1.0f)
+};
 
 void main() {
-    //gl_PointSize = 14.0;
-    gl_Position = vec4(inPosition.xy, 1.0, 1.0);
-    fragColor = inColor.rgb;
+    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition.x, inPosition.y, inPosition.z, 1.0);
+    fragTexCoord = inTexCoord;
+    normal = normals[(inNormalAndColor >> 24)];
+    fragColor = vec3((inNormalAndColor >> 16) & 0x00FF, (inNormalAndColor >> 8) & 0x0000FF, inNormalAndColor & 0x000000FF)/255.0f;
+    distanceFromCamera = length(inPosition - ubo.cameraPosition);
 }
