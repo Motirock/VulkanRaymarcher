@@ -1,0 +1,91 @@
+#version 450
+
+layout (binding = 0) uniform UniformBufferObject {
+    vec3 position;
+    vec3 viewDirection;
+    float FOV;
+} ubo;
+
+layout (binding = 1, rgba8) uniform writeonly image2D outputImage;
+
+layout (local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
+
+struct Sphere {
+    vec3 center;
+    float radius;
+    vec3 color;
+};
+
+
+
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+};
+
+float distanceFromSphere(in vec3 p, in vec3 c, float r)
+{
+	return length(p - c) - r;
+}
+
+vec3 marchRay(in Ray ray)
+{
+    vec3 origin = ray.origin;
+    vec3 direction = ray.direction;
+    float totalDistanceTraveled = 0.0;
+    const int NUMBER_OF_STEPS = 32;
+    const float MINIMUM_HIT_DISTANCE = 0.001;
+    const float MAXIMUM_TRACE_DISTANCE = 1000.0;
+
+    for (int i = 0; i < NUMBER_OF_STEPS; ++i)
+    {
+        // Calculate our current position along the ray
+        vec3 currentPosition = origin + totalDistanceTraveled * direction;
+
+        // We wrote this function earlier in the tutorial -
+        // assume that the sphere is centered at the origin
+        // and has unit radius
+        float distanceToClosest = distanceFromSphere(currentPosition, vec3(0.0), 1.0);
+
+        if (distanceToClosest < MINIMUM_HIT_DISTANCE) // hit
+        {
+            // We hit something! Return red for now
+            return vec3(1.0, 0.0, 0.0);
+        }
+
+        if (totalDistanceTraveled > MAXIMUM_TRACE_DISTANCE) // miss
+        {
+            break;
+        }
+
+        // accumulate the distance traveled thus far
+        totalDistanceTraveled += distanceToClosest;
+    }
+
+    return vec3(0.0);
+}
+
+float CANVAS_DISTANCE = 1.0;
+vec3 WORLD_UP = vec3(0.0, 0.0, 1.0);
+Ray createRay() {
+    vec2 uv = vec2(gl_GlobalInvocationID.xy) / vec2(imageSize(outputImage))*2-1;
+	vec3 uvRight = normalize(cross(ubo.viewDirection, WORLD_UP));
+	vec3 uvDown = normalize(cross(ubo.viewDirection, uvRight));
+	vec3 toCanvas = ubo.viewDirection * CANVAS_DISTANCE;
+	vec2 canvasSize = imageSize(outputImage);
+	vec3 rayPosition = ubo.position + toCanvas + (uvRight * uv.x) + (uvDown * uv.y);
+	vec3 rayDirection = normalize(rayPosition - ubo.position);
+
+    return Ray(rayPosition, rayDirection);
+}
+
+void main() {
+    Ray ray = createRay();
+   
+    imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));
+    
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ray_march(ubo.position, rayDirection), 1.0f));
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.viewAngles/360.0f, 1.0f));
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.viewDirection,  1.0f));
+}
