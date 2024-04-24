@@ -1,14 +1,17 @@
 #ifndef OCTREE_NODE_H
 #define OCTREE_NODE_H
 
-const int MAX_NODE_COUNT = __UINT16_MAX__;
+const int MAX_NODE_COUNT = 5;//__UINT16_MAX__;
 const int MAX_VALUE = 2;
 
+#include "VkUtils.h"
+
 struct GPUOctreeNode {
-    alignas(16) int childrenIndex;
-    alignas(16) int value;
-    alignas(16) bool homogenous;
-    alignas(16) int minX, minY, maxX, maxY;
+    int32_t childrenIndex;
+    int32_t value;
+    bool homogenous;
+    int32_t minX, minY, maxX, maxY;
+    alignas(16) glm::vec3 END;
 
     GPUOctreeNode() {
         childrenIndex = -1;

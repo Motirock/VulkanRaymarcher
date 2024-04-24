@@ -52,7 +52,6 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 #include <set>
 #include <random>
 
-#include "VkUtils.h"
 #include "Octree.h"
 
 using namespace VkUtils;
@@ -380,7 +379,7 @@ private:
 
         worldNode.subdivide(values);*/
         for (int i = 0; i < MAX_NODE_COUNT; i++) {
-            octree.nodes[i] = GPUOctreeNode();
+            //octree.nodes[i] = GPUOctreeNode();
         }
 
         std::vector<double> frameTimes;
@@ -1205,9 +1204,11 @@ private:
     }
 
     void createOctreeStorageBuffer() {
-        VkDeviceSize bufferSize = sizeof(Octree);
+        VkDeviceSize bufferSize = sizeof(Octree); 
 
-        createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffer, octreeStorageBufferMemory);
+        std::cout << "\n\n\n" << bufferSize << "\n\n\n" << std::endl;
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, octreeStorageBuffer, octreeStorageBufferMemory);
     
         vkMapMemory(device, octreeStorageBufferMemory, 0, bufferSize, 0, &octreeStorageBufferMapped);
     }
@@ -1298,7 +1299,7 @@ private:
         }
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+            std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
             VkDescriptorBufferInfo uniformBufferInfo{};
             uniformBufferInfo.buffer = uniformBuffers[i];
@@ -1326,7 +1327,20 @@ private:
             descriptorWrites[1].descriptorCount = 1;
             descriptorWrites[1].pImageInfo = &storageImageInfoCurrentFrame;
 
-            vkUpdateDescriptorSets(device, 2, descriptorWrites.data(), 0, nullptr);
+            VkDescriptorBufferInfo octreeStorageBufferInfo{};
+            octreeStorageBufferInfo.buffer = octreeStorageBuffer;
+            octreeStorageBufferInfo.offset = 0;
+            octreeStorageBufferInfo.range = sizeof(Octree);
+
+            descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[2].dstSet = computeDescriptorSets[i];
+            descriptorWrites[2].dstBinding = 2;
+            descriptorWrites[2].dstArrayElement = 0;
+            descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            descriptorWrites[2].descriptorCount = 1;
+            descriptorWrites[2].pBufferInfo = &octreeStorageBufferInfo;
+
+            vkUpdateDescriptorSets(device, 3, descriptorWrites.data(), 0, nullptr);
         }
     }
 
@@ -1594,12 +1608,17 @@ private:
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     }
 
-    void updateOctreeStorageBuffer(uint32_t currentImage) {
-        Octree octree{};
-        for (int i = 0; i < MAX_NODE_COUNT; i++) {
-            octree.nodes[i] = GPUOctreeNode(0, 1, 0, 0, 0, 0, 0);
-        }
-        memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
+    void updateOctreeStorageBuffer() {
+        //if (ticks == 1) {
+            Octree octree{};
+            
+            octree.nodes[0] = GPUOctreeNode(-1, 1, true, 0, 0, 1, 1);
+            octree.nodes[0].END = glm::vec3(1.0f, 0.0f, 1.0f);//GPUOctreeNode(1, 1, 1, 1, 1, 1, 1);
+
+            std::cout << "AAAA";
+            //std::cout << octree.node << std::endl;
+            memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
+        //}
     }
 
     void drawFrame() {
@@ -1610,6 +1629,7 @@ private:
         vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
         updateUniformBuffer(currentFrame);
+        updateOctreeStorageBuffer();
 
         vkResetFences(device, 1, &computeInFlightFences[currentFrame]);
 

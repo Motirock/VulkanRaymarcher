@@ -13,82 +13,23 @@ struct OctreeNode {
     int value;
     bool homogenous;
     int minX, minY, maxX, maxY;
+    vec3 END;
+    //int childrenIndex;
+    //int value;
+    //bool homogenous;
+    //int minX, minY, maxX, maxY;
 };
 
-layout(std140, binding = 2) readonly buffer Octree {
-    OctreeNode nodes[0xfff];
+layout(std140, binding = 2) readonly buffer Octree{
+    OctreeNode nodes[5];
 } octree;
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
-
-struct Sphere {
-    vec3 center;
-    float radius;
-    vec3 color;
-};
-
-Sphere spheres[] = {
-    Sphere(vec3(0.0, 0.0, 0.0), 1.5, vec3(1.0, 0.0, 0.0)),
-    Sphere(vec3(2.0, 0.0, 0.0), 1.0, vec3(0.0, 1.0, 0.0)),
-    Sphere(vec3(0.0, 2.0, 0.0), 1.0, vec3(0.0, 0.0, 1.0)),
-    Sphere(vec3(0.0, 0.0, 2.0), 1.0, vec3(1.0, 1.0, 0.0)),
-    Sphere(vec3(0.0, 0.0, -2.0), 1.0, vec3(1.0, 0.0, 1.0)),
-    Sphere(vec3(0.0, -2.0, 0.0), 1.0, vec3(0.0, 1.0, 1.0))
-};
 
 struct Ray {
     vec3 origin;
     vec3 direction;
 };
-
-float distanceFromSphere(in vec3 point, in Sphere sphere) {
-    return length(point - sphere.center) - sphere.radius;
-}
-
-vec3 marchRay(in Ray ray)
-
-{
-    octree.nodes[0].childrenIndex;
-
-    vec3 origin = ray.origin;
-    vec3 direction = ray.direction;
-    float totalDistanceTraveled = 0.0;
-    const int NUMBER_OF_STEPS = 128;
-    const float MINIMUM_HIT_DISTANCE = 0.001;
-    const float MINIMUM_STEP_DISTANCE = 0.01;
-    const float MAXIMUM_TRACE_DISTANCE = 1000.0;
-
-    for (int i = 0; i < NUMBER_OF_STEPS; ++i)
-    {
-        // Calculate our current position along the ray
-        vec3 currentPosition = origin + totalDistanceTraveled * direction;
-
-        // Find the closest sphere
-        float distanceToClosest = 1000000.0;
-        vec3 closestSphereColor = vec3(0.0);
-        for (int j = 0; j < spheres.length(); ++j) {
-            distanceToClosest = min(distanceToClosest, distanceFromSphere(currentPosition, spheres[j]));
-            if (distanceToClosest == distanceFromSphere(currentPosition, spheres[j])) {
-                closestSphereColor = spheres[j].color;
-            }
-        }
-
-        if (distanceToClosest < MINIMUM_HIT_DISTANCE) // hit
-        {
-            return closestSphereColor;
-        }
-
-        if (totalDistanceTraveled > MAXIMUM_TRACE_DISTANCE) // miss
-        {
-            break;
-        }
-
-        // accumulate the distance traveled thus far
-        totalDistanceTraveled += max(distanceToClosest, MINIMUM_STEP_DISTANCE);
-    }
-
-    return vec3(0.0);
-}
 
 float CANVAS_DISTANCE = 1;
 vec3 WORLD_UP = vec3(0.0, 0.0, 1.0);
@@ -106,10 +47,8 @@ Ray createRay() {
 
 void main() {
     Ray ray = createRay();
+
+
    
-    imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));
-    
-    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ray_march(ubo.position, rayDirection), 1.0f));
-    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.viewAngles/360.0f, 1.0f));
-    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.viewDirection,  1.0f));
+    imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(octree.nodes[0].END, 1.0f));
 }

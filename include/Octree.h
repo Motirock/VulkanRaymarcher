@@ -5,6 +5,8 @@
 
 struct Octree {
     alignas(16) GPUOctreeNode nodes[MAX_NODE_COUNT];
+    //alignas(16) GPUOctreeNode node;
+    //alignas(16) GPUOctreeNode node;
 };
 
 #endif
