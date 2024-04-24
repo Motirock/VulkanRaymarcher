@@ -42,6 +42,7 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 #include <algorithm>
 #include <chrono>
 #include <vector>
+#include <queue>
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
@@ -52,11 +53,13 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 #include <random>
 
 #include "VkUtils.h"
+#include "Octree.h"
 
 using namespace VkUtils;
 
-const uint32_t WIDTH = 1200;
-const uint32_t HEIGHT = 1200;
+const uint32_t STORAGE_IMAGE_SIZE = 1024;
+const uint32_t WIDTH = 1024;
+const uint32_t HEIGHT = 1024;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -146,7 +149,6 @@ private:
 
     VkCommandPool commandPool;
 
-    const uint32_t STORAGE_IMAGE_SIZE = 1024;
     VkImage storageImage;
     VkDeviceMemory storageImageMemory;
     VkImageView storageImageView;
@@ -157,6 +159,11 @@ private:
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
+
+    VkBuffer octreeStorageBuffer;
+    VkDeviceMemory octreeStorageBufferMemory;
+    void* octreeStorageBufferMapped;
+    Octree octree;
 
     VkDescriptorPool descriptorPool;
     VkDescriptorPool computeDescriptorPool;
@@ -242,7 +249,7 @@ private:
         if (unlocking)
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
-        viewAngles = glm::vec2(fmod(viewAngles.x, 360.0f), glm::clamp(viewAngles.y, -90.0f, 90.0f));
+        viewAngles = glm::vec2(fmod(viewAngles.x, 360.0f), glm::clamp(viewAngles.y, -89.9f, 89.9f));
         viewDirection = glm::normalize(glm::vec3(
             std::cos(glm::radians(-viewAngles.x))*std::cos(glm::radians(viewAngles.y)), 
             std::sin(glm::radians(-viewAngles.x))*std::cos(glm::radians(viewAngles.y)), 
@@ -348,9 +355,10 @@ private:
         createComputePipeline();
         createFramebuffers();
         createCommandPool();
-        createstorageImages();
+        createStorageImage();
         createVertexBuffer();
         createUniformBuffers();
+        createOctreeStorageBuffer();
         createDescriptorPool();
         createComputeDescriptorPool();
         createDescriptorSets();
@@ -361,33 +369,62 @@ private:
     }
 
     void mainLoop() {
+        /*Octree worldNode = Node(0, 0, 8, 8);
+        int **values = new int*[8];
+        for (int i = 0; i < 8; i++) {
+            values[i] = new int[8];
+            for (int j = 0; j < 8; j++) {
+                values[i][j] = rand() % MAX_VALUE;
+            }
+        }
+
+        worldNode.subdivide(values);*/
+        for (int i = 0; i < MAX_NODE_COUNT; i++) {
+            octree.nodes[i] = GPUOctreeNode();
+        }
+
+        std::vector<double> frameTimes;
+
         while (!glfwWindowShouldClose(window)) {
             static auto startTime = std::chrono::high_resolution_clock::now();
             auto currentTime = std::chrono::high_resolution_clock::now();
-            time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+            time = std::chrono::duration<double, std::chrono::seconds::period>(currentTime - startTime).count();
+
             glfwPollEvents();
             if (time*TPS >= ticks) {
                 input();
                 //update();
                 drawFrame();
+
                 #ifdef SHOW_POSITION
                 std::cout << "X Y Z: " << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << "\n";
                 #endif
+
                 #ifndef HIDE_DIAGNOSTICS
-                if (ticks % TPS == 0) {
                 auto currentTime = std::chrono::high_resolution_clock::now();
-                float frameTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count()-time;
-                uint32_t vertexCount = vertices.size();
-                std::cout << "Frame time: " << frameTime <<
-                    ", estimated maximum FPS: " << (int) (1.0f/frameTime) << "\n"
-                    << "Vertex count: " << vertexCount << " Vertex memory size: " << vertexCount*sizeof(Vertex) << "\n"
+                double frameTime = std::chrono::duration<double, std::chrono::seconds::period>(currentTime - startTime).count()-time;
+                
+                frameTimes.push_back(frameTime);
+                if (frameTimes.size() > TPS)
+                    frameTimes.erase(frameTimes.begin());
+                if (ticks % TPS == 0) {
+                double averageFrameTime = 0;
+                for (int i = 0; i < TPS; i++)
+                    averageFrameTime += frameTimes[i];
+                averageFrameTime /= TPS;
+                
+                //uint32_t vertexCount = vertices.size();
+                std::cout << "Frame time: " << (float) averageFrameTime <<
+                    ", estimated maximum FPS: " << (int) (1.0f/averageFrameTime) << "\n"
+                    //<< "Vertex count: " << vertexCount << " Vertex memory size: " << vertexCount*sizeof(Vertex) << "\n"
+                    "Rays cast: " << STORAGE_IMAGE_SIZE*STORAGE_IMAGE_SIZE << "\n"
                     << "\n";
                 }
                 #endif
+
                 ticks++;
             }
         }
-
         vkDeviceWaitIdle(device);
     }
 
@@ -418,6 +455,9 @@ private:
             vkDestroyBuffer(device, uniformBuffers[i], nullptr);
             vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         }
+
+        vkDestroyBuffer(device, octreeStorageBuffer, nullptr);
+        vkFreeMemory(device, octreeStorageBufferMemory, nullptr);
 
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
         vkDestroyDescriptorPool(device, computeDescriptorPool, nullptr);
@@ -740,7 +780,7 @@ private:
     }
 
     void createComputeDescriptorSetLayout() {
-        std::array<VkDescriptorSetLayoutBinding, 1> layoutBindings{};
+        std::array<VkDescriptorSetLayoutBinding, 3> layoutBindings{};
 
         layoutBindings[0].binding = 0;
         layoutBindings[0].descriptorCount = 1;
@@ -754,9 +794,15 @@ private:
         layoutBindings[1].pImmutableSamplers = nullptr;
         layoutBindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+        layoutBindings[2].binding = 2;
+        layoutBindings[2].descriptorCount = 1;
+        layoutBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//TODO: dynamic?
+        layoutBindings[2].pImmutableSamplers = nullptr;
+        layoutBindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 2;
+        layoutInfo.bindingCount = 3;
         layoutInfo.pBindings = layoutBindings.data();
         
         if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &computeDescriptorSetLayout) != VK_SUCCESS) {
@@ -963,7 +1009,7 @@ private:
         }
     }
 
-    void createstorageImages() {
+    void createStorageImage() {
         createImage(STORAGE_IMAGE_SIZE, STORAGE_IMAGE_SIZE, 1, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, storageImage, storageImageMemory);
     
         transitionImageLayout(storageImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1);
@@ -1158,6 +1204,14 @@ private:
         }
     }
 
+    void createOctreeStorageBuffer() {
+        VkDeviceSize bufferSize = sizeof(Octree);
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffer, octreeStorageBufferMemory);
+    
+        vkMapMemory(device, octreeStorageBufferMemory, 0, bufferSize, 0, &octreeStorageBufferMapped);
+    }
+
     void createDescriptorPool() {
         std::array<VkDescriptorPoolSize, 1> poolSizes{};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1175,7 +1229,7 @@ private:
     }
 
     void createComputeDescriptorPool() {
-        std::array<VkDescriptorPoolSize, 2> poolSizes{};
+        std::array<VkDescriptorPoolSize, 3> poolSizes{};
 
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
@@ -1183,9 +1237,12 @@ private:
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
+        poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 2;
+        poolInfo.poolSizeCount = 3;
         poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
@@ -1375,7 +1432,7 @@ private:
     }
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-         VkCommandBufferBeginInfo beginInfo{};
+        VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -1535,6 +1592,14 @@ private:
         //std::cout << viewDirection.x << " " << viewDirection.y << " " << viewDirection.z << std::endl;
 
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    }
+
+    void updateOctreeStorageBuffer(uint32_t currentImage) {
+        Octree octree{};
+        for (int i = 0; i < MAX_NODE_COUNT; i++) {
+            octree.nodes[i] = GPUOctreeNode(0, 1, 0, 0, 0, 0, 0);
+        }
+        memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
     }
 
     void drawFrame() {
