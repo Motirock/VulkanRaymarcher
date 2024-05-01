@@ -1,7 +1,7 @@
 #ifndef OCTREE_NODE_H
 #define OCTREE_NODE_H
 
-const int MAX_NODE_COUNT = 5;//__UINT16_MAX__;
+const int MAX_NODE_COUNT = 1000;//__UINT16_MAX__;
 const int MAX_VALUE = 2;
 
 #include "VkUtils.h"
@@ -10,8 +10,8 @@ struct GPUOctreeNode {
     int32_t childrenIndex;
     int32_t value;
     bool homogenous;
-    int32_t minX, minY, maxX, maxY;
-    alignas(16) glm::vec3 END;
+    int32_t minX, maxX, minY, maxY, minZ, maxZ;
+    alignas(16) glm::vec3 END = glm::vec3(1.0f, 0.0f, 0.0f);
 
     GPUOctreeNode() {
         childrenIndex = -1;
@@ -21,87 +21,59 @@ struct GPUOctreeNode {
         minY = -1;
         maxX = -1;
         maxY = -1;
+        minZ = -1;
+        maxZ = -1;
     }
 
-    GPUOctreeNode(int childrenIndex, int value, bool homogenous, int minX, int minY, int maxX, int maxY) {
+    GPUOctreeNode(int childrenIndex, int value, bool homogenous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, int &nodeSlotsUsed) {
         this->childrenIndex = childrenIndex;
         this->value = value;
         this->homogenous = homogenous;
         this->minX = minX;
-        this->minY = minY;
         this->maxX = maxX;
-        this->maxY = maxY;
-    }
-};
-
-struct OctreeNode {
-    OctreeNode *children[2][2];
-    int value = -1; //Only if homogenous
-    bool homogenous = false;
-    int minX, minY, maxX, maxY;
-
-    OctreeNode(int minX, int minY, int maxX, int maxY) {
-        this->minX = minX;
         this->minY = minY;
-        this->maxX = maxX;
         this->maxY = maxY;
+        this->minZ = minZ;
+        this->maxZ = maxZ;
     }
 
-    void checkIfHomogenous(int **values) {
-        int a = values[minY][minX];
-        for (int y = minY; y < maxY; y++) {
-            for (int x = minX; x < maxX; x++) {
-                if (values[y][x] != a) {
-                    homogenous = false;
-                    return;
+    void checkIfHomogenous(int *values, const int &WORLD_SIZE) {
+        for (int z = minZ; z < maxZ; z++) {
+            for (int y = minY; y < maxY; y++) {
+                for (int x = minX; x < maxX; x++) {
+                    if (values[x+y*WORLD_SIZE+z*WORLD_SIZE*WORLD_SIZE] != values[minX+minY*WORLD_SIZE+minZ*WORLD_SIZE*WORLD_SIZE]) {
+                        homogenous = false;
+                        return;
+                    }
                 }
             }
         }
+        value = values[minX+minY*WORLD_SIZE+minZ*WORLD_SIZE*WORLD_SIZE];
         homogenous = true;
-        value = a;
     }
 
-    void subdivide(int **values) {
-        checkIfHomogenous(values);
-        if (homogenous) {
+    void subdivide(int *values, const int &WORLD_SIZE, int &nodeSlotsUsed, GPUOctreeNode *nodes) {
+        checkIfHomogenous(values, WORLD_SIZE);
+        if (homogenous) 
             return;
-        }
 
         int size = maxX-minX;
-        
-        children[0][0] = new OctreeNode(minX, minY, minX+size/2, minY+size/2);
-        children[0][1] = new OctreeNode(minX+size/2, minY, minX+size, minY+size/2);
-        children[1][0] = new OctreeNode(minX, minY+size/2, minX+size/2, minY+size);
-        children[1][1] = new OctreeNode(minX+size/2, minY+size/2, minX+size, minY+size);
-        children[0][0]->subdivide(values);
-        children[0][1]->subdivide(values);
-        children[1][0]->subdivide(values);
-        children[1][1]->subdivide(values);
-    }    
+        childrenIndex = nodeSlotsUsed;
 
-    OctreeNode &getNodeAtPosition(int x, int y) {
-        int size = maxX-minX;
-
-        if (homogenous) {
-            return *this;
-        }
-        if (x < minX+size/2) {
-            if (y < minY+size/2) {
-                return children[0][0]->getNodeAtPosition(x, y);
-            } else {
-                return children[1][0]->getNodeAtPosition(x, y);
-            }
-        } else {
-            if (y < minY+(maxY-minY)/2) {
-                return children[0][1]->getNodeAtPosition(x, y);
-            } else {
-                return children[1][1]->getNodeAtPosition(x, y);
+        int i = 0;
+        for (int z = 0; z < 2; z++) {
+            for (int y = 0; y < 2; y++) {
+                for (int x = 0; x < 2; x++) {
+                    nodes[childrenIndex+i] = GPUOctreeNode(-1, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2, nodeSlotsUsed);
+                    
+                    i++;
+                }
             }
         }
-    }
-
-    int getSize() {
-        return maxX-minX;
+        nodeSlotsUsed += 8;
+        for (int i = 0; i < 8; i++) {
+            nodes[childrenIndex+i].subdivide(values, WORLD_SIZE, nodeSlotsUsed, nodes);
+        }
     }
 };
 

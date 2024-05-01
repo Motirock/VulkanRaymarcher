@@ -12,16 +12,13 @@ struct OctreeNode {
     int childrenIndex;
     int value;
     bool homogenous;
-    int minX, minY, maxX, maxY;
+    int minX, maxX, minY, maxY, minZ, maxZ;
     vec3 END;
-    //int childrenIndex;
-    //int value;
-    //bool homogenous;
-    //int minX, minY, maxX, maxY;
 };
 
 layout(std140, binding = 2) readonly buffer Octree{
-    OctreeNode nodes[5];
+    OctreeNode nodes[1000];
+    int WORLD_SIZE;
 } octree;
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
@@ -30,6 +27,80 @@ struct Ray {
     vec3 origin;
     vec3 direction;
 };
+
+OctreeNode emptyNode = OctreeNode(-1, -1, true, 0, 0, 0, 0, 0, 0, vec3(0.0f));
+OctreeNode getLowestOctreeNode(in vec3 position) {
+    if (position.x < 0 || position.x >= octree.WORLD_SIZE || position.y < 0 || position.y >= octree.WORLD_SIZE || position.z < 0 || position.z >= octree.WORLD_SIZE)
+        return emptyNode;
+
+    OctreeNode node = octree.nodes[0];
+    
+    while (!node.homogenous && node.childrenIndex != -1 && node.maxX-node.minX > 1) {
+        float halfSize = (node.maxX-node.minX)/2;
+        vec3 difference = vec3((position.x-node.minX)/halfSize, (position.y-node.minY)/halfSize, (position.z-node.minZ)/halfSize);
+        int index = int(floor(difference.x) + floor(difference.y)*2 + floor(difference.z)*4);
+        node = octree.nodes[node.childrenIndex+index];
+    }
+    // float halfSize = octree.WORLD_SIZE/2.0f;
+    // vec3 difference = vec3((position.x-node.minX)/halfSize, (position.y-node.minY)/halfSize, (position.z-node.minZ)/halfSize);
+    // int index = int(floor(difference.x) + floor(difference.y)*2 + floor(difference.z)*4);
+    // vec3 difference = vec3((position.x-node.minX)/halfSize, (position.y-node.minY)/halfSize, (position.z-node.minZ)/halfSize);
+    // returnNode.END = vec3(position.x-node.minX, position.y-node.minY, position.z-node.minZ);//vec3((position.x-node.minX)/halfSize, (position.y-node.minY)/halfSize, (position.z-node.minZ)/halfSize);
+    // returnNode.END = vec3(node.minY);
+    // return OctreeNode(-1, 1, true, 0, 0, 0, 0, 0, 0, vec3(difference.z));
+   
+    //
+    return node;
+    //if (octree.nodes[node.childrenIndex+index].homogenous)
+    //    return octree.nodes[node.childrenIndex+index];
+}
+
+int MAX_STEPS = 1000;
+float MAX_DISTANCE = 10.0f;
+vec3 marchRay(in Ray ray) {
+    vec3 position = ray.origin;
+    vec3 direction = ray.direction;
+    float totalDistance = 0.0f;
+
+    int MAX_STEPS = 1000, i = 0;
+    while (i++ < MAX_STEPS && totalDistance < MAX_DISTANCE) {
+        if (position.z <= 0) {
+            if (int(floor(position.x+direction.x*position.z/direction.z) + floor(position.y+direction.y*position.z/direction.z)) % 2 == 0) {
+                return vec3(1.0f, 1.0f, 1.0f);
+            } else {
+                return vec3(0.0f, 0.0f, 0.0f);
+            }
+        }
+        //if (!(position.x >= 0 && position.x <= octree.WORLD_SIZE && position.y >= 0 && position.y <= octree.WORLD_SIZE && position.z >= 0 && position.z <= octree.WORLD_SIZE))
+        //    return vec3(1.0f, 1.0f, 1.0f);
+
+        OctreeNode lowestNode = getLowestOctreeNode(position);
+
+        if (lowestNode.value > 0) {// && position.x >= 0 && position.x <= octree.WORLD_SIZE && position.y >= 0 && position.y <= octree.WORLD_SIZE && position.z >= 0 && position.z <= octree.WORLD_SIZE) {
+        //if (position.x >= 0 && position.x <= 1 && position.y >= 0 && position.y <= 1 && position.z >= 0 && position.z <= 1) {
+            return lowestNode.END;//*(5.0-totalDistance);
+        }
+
+        /*int size = lowestNode.maxX-lowestNode.minX;
+        float lowestDistance = 10000.0f;
+        if (direction.x > 0) {
+            lowestDistance = (size - (position.x - lowestNode.minX)) / abs(direction.x);
+        } else if (direction.x < 0) {
+            lowestDistance = (size - (lowestNode.maxX - position.x)) / abs(direction.x);
+        }
+        if (direction.y > 0) {
+            lowestDistance = min(lowestDistance, (size - (position.y - lowestNode.minY)) / abs(direction.y));
+        } else if (direction.y < 0) {
+            lowestDistance = min(lowestDistance, (size - (lowestNode.maxY - position.y)) / abs(direction.y));
+        }
+        lowestDistance = lowestDistance*1.0001f;//Math.max(0.01, lowestDistance);*/
+        float lowestDistance = 0.01f;
+        position += direction*lowestDistance;
+        totalDistance += lowestDistance;
+    }
+
+    return vec3(0.0f);
+}
 
 float CANVAS_DISTANCE = 1;
 vec3 WORLD_UP = vec3(0.0, 0.0, 1.0);
@@ -49,6 +120,6 @@ void main() {
     Ray ray = createRay();
 
 
-   
-    imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(octree.nodes[0].END, 1.0f));
+    imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(octree.nodes[0].END, 1.0f));
 }

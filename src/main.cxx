@@ -56,7 +56,7 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 
 using namespace VkUtils;
 
-const uint32_t STORAGE_IMAGE_SIZE = 1024;
+const uint32_t STORAGE_IMAGE_SIZE = 256;
 const uint32_t WIDTH = 1024;
 const uint32_t HEIGHT = 1024;
 
@@ -186,7 +186,7 @@ private:
 
     double lastTime = 0.0f;
 
-    glm::vec3 cameraPosition = glm::vec3(-5.0f, 0.0f, 0.0f);
+    glm::vec3 cameraPosition = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(0, 0);
@@ -1609,16 +1609,27 @@ private:
     }
 
     void updateOctreeStorageBuffer() {
-        //if (ticks == 1) {
+        if (ticks == 1) {
             Octree octree{};
             
-            octree.nodes[0] = GPUOctreeNode(-1, 1, true, 0, 0, 1, 1);
-            octree.nodes[0].END = glm::vec3(1.0f, 0.0f, 1.0f);//GPUOctreeNode(1, 1, 1, 1, 1, 1, 1);
+            int values[octree.WORLD_SIZE*octree.WORLD_SIZE*octree.WORLD_SIZE];
+            for (int i = 0; i < octree.WORLD_SIZE*octree.WORLD_SIZE*octree.WORLD_SIZE; i++) {
+                values[i] = 1+i;
+            }
 
-            std::cout << "AAAA";
+            int nodeSlotsUsed = octree.createOctree(values);
+            for (int i = 0; i < nodeSlotsUsed; i++) {
+            std::cout << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
+                << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
+                << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
+                << octree.nodes[i].value << std::endl;
+                octree.nodes[i].END = glm::vec3((float)octree.nodes[i].maxX/octree.WORLD_SIZE, (float)octree.nodes[i].maxY/octree.WORLD_SIZE, (float)octree.nodes[i].maxZ/octree.WORLD_SIZE);
+            }
+
+            std::cout << "\n\n";
             //std::cout << octree.node << std::endl;
             memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
-        //}
+        }
     }
 
     void drawFrame() {
