@@ -1615,6 +1615,9 @@ private:
             int values[octree.WORLD_SIZE*octree.WORLD_SIZE*octree.WORLD_SIZE];
             for (int i = 0; i < octree.WORLD_SIZE*octree.WORLD_SIZE*octree.WORLD_SIZE; i++) {
                 values[i] = 1+i;
+                if (rand() % 2 == 0) {
+                    values[i] = 0;
+                }
             }
 
             int nodeSlotsUsed = octree.createOctree(values);
@@ -1622,8 +1625,8 @@ private:
             std::cout << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
                 << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
                 << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
-                << octree.nodes[i].value << std::endl;
-                octree.nodes[i].END = glm::vec3((float)octree.nodes[i].maxX/octree.WORLD_SIZE, (float)octree.nodes[i].maxY/octree.WORLD_SIZE, (float)octree.nodes[i].maxZ/octree.WORLD_SIZE);
+                << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << octree.nodes[i].homogenous << std::endl;
+                octree.nodes[i].color = glm::vec3((float)octree.nodes[i].maxX/octree.WORLD_SIZE, (float)octree.nodes[i].maxY/octree.WORLD_SIZE, (float)octree.nodes[i].maxZ/octree.WORLD_SIZE);
             }
 
             std::cout << "\n\n";
