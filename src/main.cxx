@@ -23,12 +23,6 @@ g++ -c -std=c++17 -O3 src/*.cxx -Iinclude && g++ *.o -o bin/main -Llib -lglfw -l
 glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o shaders/frag.spv && glslc shaders/shader.comp -o shaders/comp.spv && glslc shaders/raymarcher.comp -o shaders/raymarcher.spv
 */
 
-// Sample by Sascha Willems
-// Contact: webmaster@saschawillems.de
-
-// Sample by Sascha Willems
-// Contact: webmaster@saschawillems.de
-
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -56,7 +50,7 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 
 using namespace VkUtils;
 
-const uint32_t STORAGE_IMAGE_SIZE = 256;
+const uint32_t STORAGE_IMAGE_SIZE = 1024;
 const uint32_t WIDTH = 1024;
 const uint32_t HEIGHT = 1024;
 
@@ -186,7 +180,7 @@ private:
 
     double lastTime = 0.0f;
 
-    glm::vec3 cameraPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 cameraPosition = glm::vec3(8.0f, 8.0f, 8.0f);
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(0, 0);
@@ -1612,10 +1606,10 @@ private:
         if (ticks == 1) {
             Octree octree{};
             
-            int values[octree.WORLD_SIZE*octree.WORLD_SIZE*octree.WORLD_SIZE];
-            for (int i = 0; i < octree.WORLD_SIZE*octree.WORLD_SIZE*octree.WORLD_SIZE; i++) {
+            int values[WORLD_SIZE*WORLD_SIZE*WORLD_SIZE];
+            for (int i = 0; i < WORLD_SIZE*WORLD_SIZE*WORLD_SIZE; i++) {
                 values[i] = 1+i;
-                if (rand() % 2 == 0) {
+                if (rand() % 10 < 9) {
                     values[i] = 0;
                 }
             }
@@ -1625,8 +1619,8 @@ private:
             std::cout << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
                 << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
                 << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
-                << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << octree.nodes[i].homogenous << std::endl;
-                octree.nodes[i].color = glm::vec3((float)octree.nodes[i].maxX/octree.WORLD_SIZE, (float)octree.nodes[i].maxY/octree.WORLD_SIZE, (float)octree.nodes[i].maxZ/octree.WORLD_SIZE);
+                << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << (bool) (octree.nodes[i].flags | FLAG_HOMOGENEOUS) << std::endl;
+                octree.nodes[i].color = glm::vec3((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE);
             }
 
             std::cout << "\n\n";
