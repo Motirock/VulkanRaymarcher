@@ -1626,21 +1626,26 @@ private:
             }
 
             int nodeSlotsUsed = octree.createOctree(values);
+
+            for (int i = 0; i < nodeSlotsUsed; i++)
+                octree.nodes[i].color = glm::vec4((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE, 0.5f);
+
+            GPUOctree gpuOctree(octree, nodeSlotsUsed);
+
             for (int i = 0; i < nodeSlotsUsed; i++) {
-            std::cout << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
-                << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
-                << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
-                << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << (bool) (octree.nodes[i].flags | FLAG_HOMOGENEOUS) << std::endl;
-                octree.nodes[i].color = glm::vec3((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE);
+                std::cout << '\n';
+            
+                gpuOctree.nodes[i].print();
+                // std::cout 
+                //     << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
+                //     << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
+                //     << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
+                //     << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << (bool) (octree.nodes[i].flags & FLAG_HOMOGENEOUS) << std::endl;
+                std::cout << octree.nodes[i].color.x << ' ' << octree.nodes[i].color.y << ' ' << octree.nodes[i].color.z << std::endl;
             }
             std::cout << "Node slots used: " << nodeSlotsUsed;
-
             std::cout << "\n\n";
 
-            GPUOctree gpuOctree(octree);
-            for (int i = 0; i < nodeSlotsUsed; i++) {
-                gpuOctree.nodes[i].print();
-            }
             //std::cout << octree.node << std::endl;
             memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
         }

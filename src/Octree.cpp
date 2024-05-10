@@ -1,5 +1,7 @@
 #include "Octree.h"
 
+#include <iostream>
+
 //Unoptimized, only on CPU
 
 int Octree::createOctree(int *values) {
@@ -11,30 +13,27 @@ int Octree::createOctree(int *values) {
 
 //Optimized, for GPU
 
-GPUOctree::GPUOctree(Octree &octree) {
-    for (int i = 0; i < MAX_NODE_COUNT; i++) {
+GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
+    for (int i = 0; i < nodeSlotsUsed; i++) {
         OctreeNode &node = octree.nodes[i];
         GPUOctreeNode &gpuNode = nodes[i];
         gpuNode.data = 0;
-
-        if (node.maxX-node.minX < 0)
-            return;
         
-        if (node.value == -1) {
-            for (int childrenIndex = node.childrenIndex; childrenIndex < 8; childrenIndex++) {
-                if (octree.nodes[childrenIndex].value == 0)
-                    gpuNode.data |= NODE_STATUS_EMPTY << i;
+        if (node.flags & FLAG_HOMOGENEOUS) {
+            gpuNode.data |= (uint32_t) (node.color.r * 255) << 0;
+            gpuNode.data |= (uint32_t) (node.color.g * 255) << 8;
+            gpuNode.data |= (uint32_t) (node.color.b * 255) << 16;
+            gpuNode.data |= (uint32_t) (node.color.a * 255) << 24;
+        }
+        else {
+            for (int childrenIndexOffset = 0; childrenIndexOffset < 8; childrenIndexOffset++) {
+                if (octree.nodes[node.childrenIndex+childrenIndexOffset].value == 0)
+                    gpuNode.data |= NODE_STATUS_EMPTY << 1;
                 else
-                    gpuNode.data |= NODE_STATUS_SOLID << i;
+                    gpuNode.data |= NODE_STATUS_SOLID << 1;
             }
             
             gpuNode.data |= node.childrenIndex << 8;
-        }
-        else {
-            gpuNode.data |= (uint64_t) (node.color.r * 255) << 0;
-            gpuNode.data |= (uint64_t) (node.color.g * 255) << 16;
-            gpuNode.data |= (uint64_t) (node.color.b * 255) << 32;
-            //gpuNode.data |= (uint16_t) (node.color.a * 255) << 0;
         }
     }
 }

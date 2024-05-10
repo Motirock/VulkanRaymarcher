@@ -14,7 +14,7 @@ struct OctreeNode {
     int32_t value;
     int flags;
     int32_t minX, maxX, minY, maxY, minZ, maxZ;
-    alignas(16) glm::vec3 color = glm::vec3(1.0f, 0.0f, 1.0f);
+    alignas(16) glm::vec4 color = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
 
     OctreeNode();
     OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, int &nodeSlotsUsed);

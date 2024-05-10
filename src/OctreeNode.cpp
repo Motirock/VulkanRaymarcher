@@ -56,7 +56,7 @@ void OctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlotsUse
     for (int z = 0; z < 2; z++) {
         for (int y = 0; y < 2; y++) {
             for (int x = 0; x < 2; x++) {
-                nodes[childrenIndex+i] = OctreeNode(-1, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2, nodeSlotsUsed);
+                nodes[childrenIndex+i] = OctreeNode(0, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2, nodeSlotsUsed);
                 
                 i++;
             }
@@ -81,6 +81,8 @@ GPUOctreeNode::GPUOctreeNode(uint32_t data) {
 void GPUOctreeNode::print() {
     for (int i = 0; i < 32; i++) {
         std::cout << (data & (1 << i) ? 1 : 0);
+        if ((i+1) % 8 == 0)
+            std::cout << ' ';
     }
     std::cout << '\n';
 }

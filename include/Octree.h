@@ -13,7 +13,7 @@ struct Octree {
 struct GPUOctree {
     alignas(16) GPUOctreeNode nodes[MAX_NODE_COUNT];
 
-    GPUOctree(Octree &octree);
+    GPUOctree(Octree &octree, const int &nodeSlotsUsed);
 };
 
 #endif
