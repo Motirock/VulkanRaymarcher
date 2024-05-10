@@ -2,7 +2,9 @@
 
 #include <iostream>
 
-GPUOctreeNode::GPUOctreeNode() {
+//Unoptimized, only on CPU
+
+OctreeNode::OctreeNode() {
     childrenIndex = -1;
     value = -1;
     flags = 0;
@@ -14,7 +16,7 @@ GPUOctreeNode::GPUOctreeNode() {
     maxZ = -1;
 }
 
-GPUOctreeNode::GPUOctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, int &nodeSlotsUsed) {
+OctreeNode::OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, int &nodeSlotsUsed) {
     this->childrenIndex = childrenIndex;
     this->value = value;
     this->flags = 0 | (homogeneous ? FLAG_HOMOGENEOUS : 0);
@@ -26,7 +28,7 @@ GPUOctreeNode::GPUOctreeNode(int childrenIndex, int value, bool homogeneous, int
     this->maxZ = maxZ;
 }
 
-bool GPUOctreeNode::isHomogeneous(int *values, const int &WORLD_SIZE) {
+bool OctreeNode::isHomogeneous(int *values, const int &WORLD_SIZE) {
     for (int z = minZ; z < maxZ; z++) {
         for (int y = minY; y < maxY; y++) {
             for (int x = minX; x < maxX; x++) {
@@ -42,7 +44,7 @@ bool GPUOctreeNode::isHomogeneous(int *values, const int &WORLD_SIZE) {
     return true;
 }
 
-void GPUOctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlotsUsed, GPUOctreeNode *nodes) {
+void OctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlotsUsed, OctreeNode *nodes) {
     isHomogeneous(values, WORLD_SIZE);
     if (flags & FLAG_HOMOGENEOUS)
         return;
@@ -54,7 +56,7 @@ void GPUOctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlots
     for (int z = 0; z < 2; z++) {
         for (int y = 0; y < 2; y++) {
             for (int x = 0; x < 2; x++) {
-                nodes[childrenIndex+i] = GPUOctreeNode(-1, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2, nodeSlotsUsed);
+                nodes[childrenIndex+i] = OctreeNode(-1, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2, nodeSlotsUsed);
                 
                 i++;
             }
@@ -64,4 +66,21 @@ void GPUOctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlots
     for (int i = 0; i < 8; i++) {
         nodes[childrenIndex+i].subdivide(values, WORLD_SIZE, nodeSlotsUsed, nodes);
     }
+}
+
+//Optimized, for GPU
+
+GPUOctreeNode::GPUOctreeNode() {
+    data = 0;
+}
+
+GPUOctreeNode::GPUOctreeNode(uint32_t data) {
+    this->data = data;
+}
+
+void GPUOctreeNode::print() {
+    for (int i = 0; i < 32; i++) {
+        std::cout << (data & (1 << i) ? 1 : 0);
+    }
+    std::cout << '\n';
 }

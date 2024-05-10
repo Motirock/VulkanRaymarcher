@@ -47,6 +47,7 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 #include <random>
 
 #include "Octree.h"
+#include "PerlinNoise.hpp"
 
 using namespace VkUtils;
 
@@ -145,7 +146,7 @@ private:
     VkImage storageImage;
     VkDeviceMemory storageImageMemory;
     VkImageView storageImageView;
-    VkSampler storageSampler;
+    VkSampler storageImageSampler;
     void *storageImageMapped;
 
 
@@ -180,13 +181,13 @@ private:
 
     double lastTime = 0.0f;
 
-    glm::vec3 cameraPosition = glm::vec3(8.0f, 8.0f, 8.0f);
+    glm::vec3 cameraPosition = glm::vec3(WORLD_SIZE/2.0f, WORLD_SIZE/2.0f, WORLD_SIZE);
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(0, 0);
     float FOV = 90.0f;
 
-    float speed = 1.0f;
+    float speed = 10.0f;
     float turningSensitivity = 0.2f;
 
     float mouseX = 0.0f, mouseY = 0.0f;
@@ -454,13 +455,17 @@ private:
 
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
         vkDestroyDescriptorPool(device, computeDescriptorPool, nullptr);
-      
+
+        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(device, computeDescriptorSetLayout, nullptr);
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            // vkDestroyBuffer(device, storageBuffers[i], nullptr);
-            // vkFreeMemory(device, storageBuffersMemory[i], nullptr);
-        }
+        vkDestroySampler(device, storageImageSampler, nullptr);
+        vkDestroyImageView(device, storageImageView, nullptr);
+        vkDestroyImage(device, storageImage, nullptr);
+        vkFreeMemory(device, storageImageMemory, nullptr);
+
+        vkDestroyBuffer(device, vertexBuffer, nullptr);
+        vkFreeMemory(device, vertexBufferMemory, nullptr);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
@@ -1030,7 +1035,7 @@ private:
         samplerInfo.maxLod = 0.0f; //static_cast<float>(mipLevels);
         samplerInfo.mipLodBias = 0.0f; //Optional
         
-        if (vkCreateSampler(device, &samplerInfo, nullptr, &storageSampler) != VK_SUCCESS) {
+        if (vkCreateSampler(device, &samplerInfo, nullptr, &storageImageSampler) != VK_SUCCESS) {
             throw std::runtime_error("failed to create texture sampler!");
         }
 
@@ -1263,7 +1268,7 @@ private:
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
             imageInfo.imageView = storageImageView;
-            imageInfo.sampler = storageSampler;
+            imageInfo.sampler = storageImageSampler;
 
             std::array<VkWriteDescriptorSet, 1> descriptorWrites{};
 
@@ -1311,7 +1316,7 @@ private:
             VkDescriptorImageInfo storageImageInfoCurrentFrame{};
             storageImageInfoCurrentFrame.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
             storageImageInfoCurrentFrame.imageView = storageImageView;
-            storageImageInfoCurrentFrame.sampler = storageSampler;
+            storageImageInfoCurrentFrame.sampler = storageImageSampler;
 
             descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrites[1].dstSet = computeDescriptorSets[i];
@@ -1605,12 +1610,18 @@ private:
     void updateOctreeStorageBuffer() {
         if (ticks == 1) {
             Octree octree{};
+
+            const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
+	        const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
             
             int values[WORLD_SIZE*WORLD_SIZE*WORLD_SIZE];
-            for (int i = 0; i < WORLD_SIZE*WORLD_SIZE*WORLD_SIZE; i++) {
-                values[i] = 1+i;
-                if (rand() % 10 < 9) {
-                    values[i] = 0;
+            int i = 0;
+            for (int z = 0; z < WORLD_SIZE; z++) {
+                for (int y = 0; y < WORLD_SIZE; y++) {
+                    for (int x = 0; x < WORLD_SIZE; x++) {
+                        values[i] = terrainNoise.noise2D_01((float) x/WORLD_SIZE, (float) y/WORLD_SIZE) >= (float) z/WORLD_SIZE ? 1 : 0;
+                        i++;
+                    }
                 }
             }
 
@@ -1622,8 +1633,14 @@ private:
                 << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << (bool) (octree.nodes[i].flags | FLAG_HOMOGENEOUS) << std::endl;
                 octree.nodes[i].color = glm::vec3((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE);
             }
+            std::cout << "Node slots used: " << nodeSlotsUsed;
 
             std::cout << "\n\n";
+
+            GPUOctree gpuOctree(octree);
+            for (int i = 0; i < nodeSlotsUsed; i++) {
+                gpuOctree.nodes[i].print();
+            }
             //std::cout << octree.node << std::endl;
             memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
         }
