@@ -1627,8 +1627,12 @@ private:
 
             int nodeSlotsUsed = octree.createOctree(values);
 
-            for (int i = 0; i < nodeSlotsUsed; i++)
-                octree.nodes[i].color = glm::vec4((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE, 0.5f);
+            for (int i = 0; i < nodeSlotsUsed; i++) {
+                if (octree.nodes[i].value != 0)
+                    octree.nodes[i].color = glm::vec4((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE, 0.5f);
+                else
+                    octree.nodes[i].color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+            }
 
             GPUOctree gpuOctree(octree, nodeSlotsUsed);
 
@@ -1641,7 +1645,10 @@ private:
                 //     << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
                 //     << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
                 //     << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << (bool) (octree.nodes[i].flags & FLAG_HOMOGENEOUS) << std::endl;
-                std::cout << octree.nodes[i].color.x << ' ' << octree.nodes[i].color.y << ' ' << octree.nodes[i].color.z << std::endl;
+                if (octree.nodes[i].flags & FLAG_HOMOGENEOUS)
+                    std::cout << octree.nodes[i].color.x << ' ' << octree.nodes[i].color.y << ' ' << octree.nodes[i].color.z << ' ' << octree.nodes[i].value << std::endl;
+                else
+                    std::cout << octree.nodes[i].childrenIndex << std::endl;
             }
             std::cout << "Node slots used: " << nodeSlotsUsed;
             std::cout << "\n\n";

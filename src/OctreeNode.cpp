@@ -16,7 +16,7 @@ OctreeNode::OctreeNode() {
     maxZ = -1;
 }
 
-OctreeNode::OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, int &nodeSlotsUsed) {
+OctreeNode::OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {
     this->childrenIndex = childrenIndex;
     this->value = value;
     this->flags = 0 | (homogeneous ? FLAG_HOMOGENEOUS : 0);
@@ -33,6 +33,7 @@ bool OctreeNode::isHomogeneous(int *values, const int &WORLD_SIZE) {
         for (int y = minY; y < maxY; y++) {
             for (int x = minX; x < maxX; x++) {
                 if (values[x+y*WORLD_SIZE+z*WORLD_SIZE*WORLD_SIZE] != values[minX+minY*WORLD_SIZE+minZ*WORLD_SIZE*WORLD_SIZE]) {
+                    //TODO this is wrong
                     flags &= FLAG_NO_FLAG ^ FLAG_HOMOGENEOUS;
                     return false;
                 }
@@ -45,7 +46,6 @@ bool OctreeNode::isHomogeneous(int *values, const int &WORLD_SIZE) {
 }
 
 void OctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlotsUsed, OctreeNode *nodes) {
-    isHomogeneous(values, WORLD_SIZE);
     if (flags & FLAG_HOMOGENEOUS)
         return;
 
@@ -56,14 +56,14 @@ void OctreeNode::subdivide(int *values, const int &WORLD_SIZE, int &nodeSlotsUse
     for (int z = 0; z < 2; z++) {
         for (int y = 0; y < 2; y++) {
             for (int x = 0; x < 2; x++) {
-                nodes[childrenIndex+i] = OctreeNode(0, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2, nodeSlotsUsed);
-                
+                nodes[childrenIndex+i] = OctreeNode(0, -1, false, minX+x*size/2, minX+(x+1)*size/2, minY+y*size/2, minY+(y+1)*size/2, minZ+z*size/2, minZ+(z+1)*size/2);
                 i++;
             }
         }
     }
     nodeSlotsUsed += 8;
     for (int i = 0; i < 8; i++) {
+        nodes[childrenIndex+i].isHomogeneous(values, WORLD_SIZE);
         nodes[childrenIndex+i].subdivide(values, WORLD_SIZE, nodeSlotsUsed, nodes);
     }
 }

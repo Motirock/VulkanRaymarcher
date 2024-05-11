@@ -21,12 +21,12 @@ struct OctreeNode {
 };
 
 struct ReturnedOctreeNode {
-    int value;
     int minX, maxX, minY, maxY, minZ, maxZ;
     vec4 color;
 };
 
 layout(std140, binding = 2) readonly buffer Octree{
+    OctreeNode worldNode;
     OctreeNode nodes[20000];
 } octree;
 
@@ -38,12 +38,12 @@ struct Ray {
 };
 
 int WORLD_SIZE = 64;
-ReturnedOctreeNode emptyNode = ReturnedOctreeNode(-1, 0, 0, 0, 0, 0, 0, vec4(0.0f));
+ReturnedOctreeNode emptyNode = ReturnedOctreeNode(0, 0, 0, 0, 0, 0, vec4(0.0f));
 ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
     if (position.x < 0 || position.x >= WORLD_SIZE || position.y < 0 || position.y >= WORLD_SIZE || position.z < 0 || position.z >= WORLD_SIZE)
         return emptyNode;
 
-    OctreeNode node = octree.nodes[0];
+    OctreeNode node = octree.worldNode;
 
     float halfSize = WORLD_SIZE/2.0f;
     int minX = 0, minY = 0, minZ = 0;
@@ -59,7 +59,7 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
         node = octree.nodes[node.childrenIndex+index];
     }
 
-    return ReturnedOctreeNode(node.value, minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), node.color);
+    return ReturnedOctreeNode(minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), node.color);
 }
 
 int MAX_STEPS = 1000;
@@ -85,7 +85,7 @@ vec3 marchRay(in Ray ray) {
 
         ReturnedOctreeNode lowestNode = getLowestOctreeNode(position);
 
-        if (lowestNode.value > 0) {
+        if (lowestNode.color.a > 0.0f) {
             returnColor += lowestNode.color.rgb*(1.0f-opacityUsed)*lowestNode.color.a;
             opacityUsed += lowestNode.color.a*(1.0f-opacityUsed)*1.1;
         }

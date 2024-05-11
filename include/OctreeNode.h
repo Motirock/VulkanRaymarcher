@@ -17,7 +17,7 @@ struct OctreeNode {
     alignas(16) glm::vec4 color = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
 
     OctreeNode();
-    OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, int &nodeSlotsUsed);
+    OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ);
 
     bool isHomogeneous(int *values, const int &WORLD_SIZE);
 
@@ -25,8 +25,8 @@ struct OctreeNode {
 };
 
 enum GPUNodeStatus {
-    NODE_STATUS_EMPTY = 0b0,
-    NODE_STATUS_SOLID = 0b1,
+    NODE_STATUS_EMPTY       = 0b0,
+    NODE_STATUS_NON_EMPTY   = 0b1,
 };
 struct GPUOctreeNode {
     uint32_t data;
