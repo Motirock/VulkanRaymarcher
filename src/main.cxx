@@ -181,7 +181,7 @@ private:
 
     double lastTime = 0.0f;
 
-    glm::vec3 cameraPosition = glm::vec3(WORLD_SIZE/2.0f, WORLD_SIZE/2.0f, WORLD_SIZE);
+    glm::vec3 cameraPosition = glm::vec3(WORLD_DIMENSIONS.x/2.0f, WORLD_DIMENSIONS.y/2.0f, WORLD_DIMENSIONS.z);
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(0, 0);
@@ -409,10 +409,11 @@ private:
                 
                 //uint32_t vertexCount = vertices.size();
                 std::cout << "Frame time: " << (float) averageFrameTime <<
-                    ", estimated maximum FPS: " << (int) (1.0f/averageFrameTime) << "\n"
+                    ", estimated maximum FPS: " << (int) (1.0f/averageFrameTime) << '\n'
                     //<< "Vertex count: " << vertexCount << " Vertex memory size: " << vertexCount*sizeof(Vertex) << "\n"
-                    "Rays cast: " << STORAGE_IMAGE_SIZE*STORAGE_IMAGE_SIZE << "\n"
-                    << "\n";
+                    << "Rays cast: " << STORAGE_IMAGE_SIZE*STORAGE_IMAGE_SIZE << '\n'
+                    << "Voxel memory (bytes): " << sizeof(GPUOctreeGrid) << '\n'
+                    << '\n';
                 }
                 #endif
 
@@ -1203,7 +1204,7 @@ private:
     }
 
     void createOctreeStorageBuffer() {
-        VkDeviceSize bufferSize = sizeof(GPUOctree); 
+        VkDeviceSize bufferSize = sizeof(GPUOctreeGrid); 
 
         std::cout << "\n\n\n\n" << bufferSize << "\n\n\n" << std::endl;
 
@@ -1329,7 +1330,7 @@ private:
             VkDescriptorBufferInfo octreeStorageBufferInfo{};
             octreeStorageBufferInfo.buffer = octreeStorageBuffer;
             octreeStorageBufferInfo.offset = 0;
-            octreeStorageBufferInfo.range = sizeof(GPUOctree);
+            octreeStorageBufferInfo.range = sizeof(GPUOctreeGrid);
 
             descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrites[2].dstSet = computeDescriptorSets[i];
@@ -1609,56 +1610,45 @@ private:
 
     void updateOctreeStorageBuffer() {
         if (ticks == 1) {
-            Octree octree{};
-
             const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
 	        const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
-            
-            int values[WORLD_SIZE*WORLD_SIZE*WORLD_SIZE];
-            int i = 0;
-            for (int z = 0; z < WORLD_SIZE; z++) {
-                for (int y = 0; y < WORLD_SIZE; y++) {
-                    for (int x = 0; x < WORLD_SIZE; x++) {
-                        values[i] = terrainNoise.noise2D_01((float) x/WORLD_SIZE, (float) y/WORLD_SIZE) >= (float) z/WORLD_SIZE ? 1 : 0;
-                        i++;
+
+            Octree octree = Octree{};
+
+            GPUOctreeGrid octreeGrid = GPUOctreeGrid();
+
+            for (int i = 0; i < WORLD_DIMENSIONS.x/CHUNK_SIZE; i++) {
+                for (int j = 0; j < WORLD_DIMENSIONS.y/CHUNK_SIZE; j++) {
+                    for (int k = 0; k < WORLD_DIMENSIONS.z/CHUNK_SIZE; k++) {
+
+                        int values[CHUNK_SIZE*CHUNK_SIZE*CHUNK_SIZE];
+                        int valueIndex = 0;
+                        for (int z = 0; z < CHUNK_SIZE; z++) {
+                            for (int y = 0; y < CHUNK_SIZE; y++) {
+                                for (int x = 0; x < CHUNK_SIZE; x++) {
+                                    values[valueIndex] = terrainNoise.noise2D_01((float) x/CHUNK_SIZE, (float) y/CHUNK_SIZE) >= (float) z/CHUNK_SIZE ? 1 : 0;
+                                    valueIndex++;
+                                }
+                            }
+                        }
+
+                        int nodeSlotsUsed = octree.createOctree(values, glm::ivec3(0));
+                        for (int nodeIndex = 0; nodeIndex < nodeSlotsUsed; nodeIndex++) {
+                            if (octree.nodes[nodeIndex].value != 0)
+                                octree.nodes[nodeIndex].color = glm::vec4((float)octree.nodes[nodeIndex].maxX/CHUNK_SIZE, (float)octree.nodes[nodeIndex].maxY/CHUNK_SIZE, (float)octree.nodes[nodeIndex].maxZ/CHUNK_SIZE, 1.0f);
+                            else
+                                octree.nodes[nodeIndex].color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+                        }
+
+                        GPUOctree tempOctree = GPUOctree(octree, nodeSlotsUsed);
+
+                        octreeGrid.octrees[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y] = tempOctree;
+                        octreeGrid.octrees[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y].position = glm::ivec3(i, j, k)*CHUNK_SIZE;
                     }
                 }
             }
 
-            int nodeSlotsUsed = octree.createOctree(values);
-
-            for (int i = 0; i < nodeSlotsUsed; i++) {
-                if (octree.nodes[i].value != 0)
-                    octree.nodes[i].color = glm::vec4((float)octree.nodes[i].maxX/WORLD_SIZE, (float)octree.nodes[i].maxY/WORLD_SIZE, (float)octree.nodes[i].maxZ/WORLD_SIZE, 0.5f);
-                else
-                    octree.nodes[i].color = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
-            }
-
-            GPUOctree gpuOctree(octree, nodeSlotsUsed);
-            
-
-            gpuOctree.worldNode.print();
-            
-
-            for (int i = 0; i < nodeSlotsUsed; i++) {
-                std::cout << '\n';
-            
-                gpuOctree.nodes[i].print();
-                
-                // std::cout 
-                //     << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
-                //     << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
-                //     << "(" << octree.nodes[i].minZ << ", " << octree.nodes[i].maxZ << ") "
-                //     << octree.nodes[i].value << ' ' << octree.nodes[i].childrenIndex << ' ' << (bool) (octree.nodes[i].flags & FLAG_HOMOGENEOUS) << std::endl;
-                if (octree.nodes[i].flags & FLAG_HOMOGENEOUS)
-                    std::cout << octree.nodes[i].color.x << ' ' << octree.nodes[i].color.y << ' ' << octree.nodes[i].color.z << ' ' << octree.nodes[i].value << std::endl;
-                else
-                    std::cout << octree.nodes[i].childrenIndex << std::endl;
-            }
-            std::cout << "Node slots used: " << nodeSlotsUsed;
-            std::cout << "\n\n";
-
-            memcpy(octreeStorageBufferMapped, &gpuOctree, sizeof(GPUOctree));
+            memcpy(octreeStorageBufferMapped, &octreeGrid, sizeof(GPUOctreeGrid));
         }
     }
 
