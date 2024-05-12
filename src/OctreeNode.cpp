@@ -79,9 +79,9 @@ GPUOctreeNode::GPUOctreeNode(uint32_t data) {
 }
 
 void GPUOctreeNode::print() {
-    for (int i = 0; i < 32; i++) {
+    for (int i = 31; i >= 0; i--) {
         std::cout << (data & (1 << i) ? 1 : 0);
-        if ((i+1) % 8 == 0)
+        if (i % 8 == 0)
             std::cout << ' ';
     }
     std::cout << '\n';

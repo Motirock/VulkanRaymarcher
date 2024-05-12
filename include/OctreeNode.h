@@ -1,7 +1,7 @@
 #ifndef OCTREE_NODE_H
 #define OCTREE_NODE_H
 
-const int MAX_NODE_COUNT = 20000;//__UINT16_MAX__;
+const int MAX_NODE_COUNT = 65535;//__UINT16_MAX__;
 const int MAX_VALUE = 2;
 
 const int FLAG_NO_FLAG =       0b00000000000000000000000000000000;
@@ -14,7 +14,7 @@ struct OctreeNode {
     int32_t value;
     int flags;
     int32_t minX, maxX, minY, maxY, minZ, maxZ;
-    alignas(16) glm::vec4 color = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
+    glm::vec4 color = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
 
     OctreeNode();
     OctreeNode(int childrenIndex, int value, bool homogeneous, int minX, int maxX, int minY, int maxY, int minZ, int maxZ);
@@ -25,8 +25,10 @@ struct OctreeNode {
 };
 
 enum GPUNodeStatus {
-    NODE_STATUS_EMPTY       = 0b0,
-    NODE_STATUS_NON_EMPTY   = 0b1,
+    NODE_STATUS_EMPTY           = 0b0,
+    NODE_STATUS_NON_EMPTY       = 0b1,
+    NODE_STATUS_HOMOGENEOUS     = 0b1,
+    NODE_STATUS_NON_HOMOGENEOUS = 0b0,
 };
 struct GPUOctreeNode {
     uint32_t data;

@@ -1203,9 +1203,9 @@ private:
     }
 
     void createOctreeStorageBuffer() {
-        VkDeviceSize bufferSize = sizeof(Octree); 
+        VkDeviceSize bufferSize = sizeof(GPUOctree); 
 
-        std::cout << "\n\n\n" << bufferSize << "\n\n\n" << std::endl;
+        std::cout << "\n\n\n\n" << bufferSize << "\n\n\n" << std::endl;
 
         createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, octreeStorageBuffer, octreeStorageBufferMemory);
     
@@ -1329,7 +1329,7 @@ private:
             VkDescriptorBufferInfo octreeStorageBufferInfo{};
             octreeStorageBufferInfo.buffer = octreeStorageBuffer;
             octreeStorageBufferInfo.offset = 0;
-            octreeStorageBufferInfo.range = sizeof(Octree);
+            octreeStorageBufferInfo.range = sizeof(GPUOctree);
 
             descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrites[2].dstSet = computeDescriptorSets[i];
@@ -1635,11 +1635,16 @@ private:
             }
 
             GPUOctree gpuOctree(octree, nodeSlotsUsed);
+            
+
+            gpuOctree.worldNode.print();
+            
 
             for (int i = 0; i < nodeSlotsUsed; i++) {
                 std::cout << '\n';
             
                 gpuOctree.nodes[i].print();
+                
                 // std::cout 
                 //     << "(" << octree.nodes[i].minX << ", " << octree.nodes[i].maxX << ") " 
                 //     << "(" << octree.nodes[i].minY << ", " << octree.nodes[i].maxY << ") "
@@ -1653,8 +1658,7 @@ private:
             std::cout << "Node slots used: " << nodeSlotsUsed;
             std::cout << "\n\n";
 
-            //std::cout << octree.node << std::endl;
-            memcpy(octreeStorageBufferMapped, &octree, sizeof(Octree));
+            memcpy(octreeStorageBufferMapped, &gpuOctree, sizeof(GPUOctree));
         }
     }
 
@@ -1662,7 +1666,7 @@ private:
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-        // Compute submission        
+        //Compute submission        
         vkWaitForFences(device, 1, &computeInFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
         updateUniformBuffer(currentFrame);

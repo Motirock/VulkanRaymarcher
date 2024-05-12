@@ -24,13 +24,21 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
         throw std::runtime_error("World node cannot be homogeneous");
     }
     else {
-        gpuNode.data = node.childrenIndex;
+        if (node.childrenIndex+7 >= UINT16_MAX)
+            throw std::runtime_error("Children index out of bounds");
+
+        gpuNode.data |= node.childrenIndex;
 
         for (int childrenIndexOffset = 0; childrenIndexOffset < 8; childrenIndexOffset++) {
             if (octree.nodes[node.childrenIndex+childrenIndexOffset].value == 0)
-                gpuNode.data |= NODE_STATUS_EMPTY << 24+childrenIndexOffset;
+                gpuNode.data |= NODE_STATUS_EMPTY << 16+childrenIndexOffset;
             else
-                gpuNode.data |= NODE_STATUS_NON_EMPTY << 24+childrenIndexOffset;
+                gpuNode.data |= NODE_STATUS_NON_EMPTY << 16+childrenIndexOffset;
+
+            if (octree.nodes[node.childrenIndex+childrenIndexOffset].flags & FLAG_HOMOGENEOUS)
+                gpuNode.data |= NODE_STATUS_HOMOGENEOUS << 24+childrenIndexOffset;
+            else
+                gpuNode.data |= NODE_STATUS_NON_HOMOGENEOUS << 24+childrenIndexOffset;
         }
     }
     }
@@ -48,16 +56,21 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
             gpuNode.data |= (uint32_t) (node.color.a * 255) << 24;
         }
         else {
-            gpuNode.data = node.childrenIndex;
+            if (node.childrenIndex+7 >= UINT16_MAX)
+                throw std::runtime_error("Children index out of bounds");
 
-            //Load children status
+            gpuNode.data |= node.childrenIndex;
+
             for (int childrenIndexOffset = 0; childrenIndexOffset < 8; childrenIndexOffset++) {
-                //Totally empty (homogeneous) children nodes
                 if (octree.nodes[node.childrenIndex+childrenIndexOffset].value == 0)
-                    gpuNode.data |= NODE_STATUS_EMPTY << 24+childrenIndexOffset;
-                //Either partially (non-homogeneous) or totally (homogeneous) filled children nodes
+                    gpuNode.data |= NODE_STATUS_EMPTY << 16+childrenIndexOffset;
                 else
-                    gpuNode.data |= NODE_STATUS_NON_EMPTY << 24+childrenIndexOffset;
+                    gpuNode.data |= NODE_STATUS_NON_EMPTY << 16+childrenIndexOffset;
+
+                if (octree.nodes[node.childrenIndex+childrenIndexOffset].flags & FLAG_HOMOGENEOUS)
+                    gpuNode.data |= NODE_STATUS_HOMOGENEOUS << 24+childrenIndexOffset;
+                else
+                    gpuNode.data |= NODE_STATUS_NON_HOMOGENEOUS << 24+childrenIndexOffset;
             }
         }
     }
