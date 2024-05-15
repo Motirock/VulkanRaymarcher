@@ -4,6 +4,7 @@ layout (binding = 0) uniform UniformBufferObject {
     vec3 position;
     vec3 viewDirection;
     float FOV;
+    float aspectRatio;
 } ubo;
 
 layout (binding = 1, rgba8) uniform writeonly image2D outputImage;
@@ -36,7 +37,7 @@ struct Ray {
 
 const uint CHILDREN_INDEX_MASK  =           0x0000FFFF;//0b00000000000000001111111111111111;
 const uint CHILDREN_NON_EMPTY_MASK_MASK =   0x00FF0000;//0b00000000111111110000000000000000;
-const uint CHILDREN_HOMOGENEOUS_MASK_MASK = 0xFF000000;//0b11111111000000000000000000000000;
+const uint CHILDREN_HOMOGENEITY_MASK_MASK = 0xFF000000;//0b11111111000000000000000000000000;
 const uint CHILDREN_NON_EMPTY_MASK_MASKS[8] = {
                                             0x00010000,//0b00000000000000010000000000000000,
                                             0x00020000,//0b00000000000000100000000000000000,
@@ -47,7 +48,7 @@ const uint CHILDREN_NON_EMPTY_MASK_MASKS[8] = {
                                             0x00400000,//0b00000000010000000000000000000000,
                                             0x00800000,//0b00000000100000000000000000000000,
 };
-const uint CHILDREN_HOMOGENEOUS_MASK_MASKS[8] = {
+const uint CHILDREN_HOMOGENEITY_MASK_MASKS[8] = {
                                             0x01000000,//0b00000001000000000000000000000000,
                                             0x02000000,//0b00000010000000000000000000000000,
                                             0x04000000,//0b00000100000000000000000000000000,
@@ -73,8 +74,8 @@ uint getChildrenNonEmptyMask(in GPUOctreeNode node) {
     return node.data & CHILDREN_NON_EMPTY_MASK_MASK;
 }
 
-uint getChildrenHomogeneousMask(in GPUOctreeNode node) {
-    return node.data & CHILDREN_HOMOGENEOUS_MASK_MASK;
+uint getChildrenHomogeneityMask(in GPUOctreeNode node) {
+    return node.data & CHILDREN_HOMOGENEITY_MASK_MASK;
 }
 
 vec4 getColor(in GPUOctreeNode node) {
@@ -118,8 +119,6 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
         minZ += int(floor(difference.z)*halfSize);
         halfSize /= 2.0f;
 
-        //return ReturnedOctreeNode(minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), vec4(tempColors[index], 1.0f));
-
         bool isNonEmpty = bool(getChildrenNonEmptyMask(node) & CHILDREN_NON_EMPTY_MASK_MASKS[index]);
         if (!isNonEmpty) {
             return ReturnedOctreeNode(
@@ -129,19 +128,14 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
                 vec4(0.0f));
         }
 
-        //return ReturnedOctreeNode(minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), vec4(position.x/WORLD_SIZE, position.y/WORLD_SIZE, position.z/WORLD_SIZE, 1.0f));
-
-        bool isHomogenous = (getChildrenHomogeneousMask(node) & CHILDREN_HOMOGENEOUS_MASK_MASKS[index]) != 0;
+        bool isHomogenous = (getChildrenHomogeneityMask(node) & CHILDREN_HOMOGENEITY_MASK_MASKS[index]) != 0;
         if (isHomogenous) {
-            //return ReturnedOctreeNode(minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), vec4((getChildrenHomogeneousMask(node) | CHILDREN_HOMOGENEOUS_MASK_MASKS[index] >> 24)/255.0f, (getChildrenHomogeneousMask(node) | CHILDREN_HOMOGENEOUS_MASK_MASKS[index] >> 24)/255.0f, (getChildrenHomogeneousMask(node) | CHILDREN_HOMOGENEOUS_MASK_MASKS[index] >> 24)/255.0f, 1.0f));
             return ReturnedOctreeNode(
                 octreePosition.x+minX, octreePosition.x+minX+int(halfSize*2.0f), 
                 octreePosition.y+minY, octreePosition.y+minY+int(halfSize*2.0f), 
                 octreePosition.z+minZ, octreePosition.z+minZ+int(halfSize*2.0f), 
                 getColor(octreeGrid.octrees[chunkIndex].nodes[getChildrenIndex(node)+index]));
         }
-
-        //return ReturnedOctreeNode(minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), vec4(position.x/WORLD_SIZE, position.y/WORLD_SIZE, position.z/WORLD_SIZE, 1.0f));
 
         node = octreeGrid.octrees[chunkIndex].nodes[getChildrenIndex(node)+index];
     }
@@ -151,12 +145,14 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
         octreePosition.y+minY, octreePosition.y+minY+int(halfSize*2.0f), 
         octreePosition.z+minZ, octreePosition.z+minZ+int(halfSize*2.0f), 
         vec4(1.0f, 0.0f, 0.0f, 1.0f));
-    //ReturnedOctreeNode(minX, minX+int(halfSize*2.0f), minY, minY+int(halfSize*2.0f), minZ, minZ+int(halfSize*2.0f), getColor(node));
-    
 }
 
-int MAX_STEPS = 1000;
-float MAX_DISTANCE = 100.0f;
+vec2 floorColors = vec2(0.7f, 0.0f), floorAbsorbedFactors = vec2(0.2f, 1.0f);
+float minAbsorbtion = 0.5f;
+float TEMP_ABSORBTION = 1.0;
+int MAX_STEPS = 1000, MAX_REFLECTIONS = 10;
+float MAX_DISTANCE = 10000.0f;
+const vec3 skyColor = vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f);
 vec3 marchRay(in Ray ray) {
     vec3 returnColor = vec3(0.0f);
     float opacityUsed = 0.0f;
@@ -164,51 +160,109 @@ vec3 marchRay(in Ray ray) {
     vec3 direction = ray.direction;
     float totalDistance = 0.0f;
 
-    int MAX_STEPS = 1000, i = 0;
+    vec3 differenceFromPrevious = vec3(0.0f);
+    int reflections = 0;
+
+    int i = 0;
     while (i++ < MAX_STEPS && totalDistance < MAX_DISTANCE && opacityUsed < 1.0f) {
         if (position.z <= 0) {
-            if (int(floor(position.x-direction.x*position.z/direction.z) + floor(position.y-direction.y*position.z/direction.z)) % 2 == 0) {
-                returnColor += vec3(1.0f)*(1.0f-opacityUsed);
-                break;
+            totalDistance -= position.z/direction.z;
+            position = position-direction*position.z/direction.z;
+            //floor(position.y-direction.y*position.z/direction.z))
+
+            vec2 difference = (WORLD_DIMENSIONS/2.0f-position).xy;
+            float distance = sqrt(difference.x*difference.x+difference.y*difference.y);
+            if (int(pow(distance, 0.4f)) % 2 == 0) {
+                returnColor += vec3(floorColors.x)*(1.0f-opacityUsed)*floorAbsorbedFactors.x;
+                opacityUsed += floorAbsorbedFactors.x*(1.0f-opacityUsed);
+                if (opacityUsed >= 1.0f)
+                    break;
+                direction = reflect(direction, vec3(0.0f, 0.0f, 1.0f));
             } else {
-                returnColor += vec3(0.0f)*(1.0f-opacityUsed);
-                break;
+                returnColor += vec3(floorColors.y)*(1.0f-opacityUsed)*floorAbsorbedFactors.y;
+                opacityUsed += floorAbsorbedFactors.y*(1.0f-opacityUsed);
+                if (opacityUsed >= 1.0f)
+                    break;
+                direction = reflect(direction, vec3(0.0f, 0.0f, 1.0f));
             }
         }
 
         ReturnedOctreeNode lowestNode = getLowestOctreeNode(position);
 
         if (lowestNode.color.a > 0.0f) {
-            returnColor += lowestNode.color.rgb*(1.0f-opacityUsed)*lowestNode.color.a;
-            opacityUsed += lowestNode.color.a*(1.0f-opacityUsed)*1.1;
+            returnColor += lowestNode.color.rgb*(1.0f-opacityUsed)*max(TEMP_ABSORBTION, minAbsorbtion);
+            opacityUsed += max(TEMP_ABSORBTION, minAbsorbtion)*(1.0f-opacityUsed)*1.2f;
+            if (reflections >= MAX_REFLECTIONS) {
+                return returnColor*opacityUsed+vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f)*(1.0f-opacityUsed);
+            }
+            //return vec3(abs(differenceFromPrevious.x), abs(differenceFromPrevious.y), abs(differenceFromPrevious.z));
+            if (opacityUsed >= 1.0f)
+                break;
+            if (differenceFromPrevious != vec3(0.0f) && reflections < MAX_REFLECTIONS) {
+                direction = reflect(direction, differenceFromPrevious);
+                reflections++;
+            }
         }
 
         int size = lowestNode.maxX-lowestNode.minX;
-        float lowestDistance = 100.0f;
+        float lowestDistance = MAX_DISTANCE-totalDistance;
         if (position.x < 0 || position.x >= WORLD_DIMENSIONS.x || position.y < 0 || position.y >= WORLD_DIMENSIONS.y || position.z < 0 || position.z >= WORLD_DIMENSIONS.z) {
-            lowestDistance = 1.0f;   
+            differenceFromPrevious = vec3(0.0f);
+
+            if (direction.z < 0)
+                lowestDistance = min(lowestDistance, abs((position.z) / direction.z));
+
+            vec3 difference = WORLD_DIMENSIONS/2.0f-position;
+            if (difference.x/direction.x > 0) {
+                lowestDistance = min(lowestDistance, abs((abs(difference.x)-WORLD_DIMENSIONS.x/2.0f) / direction.x));
+                differenceFromPrevious = vec3(1.0f, 0.0f, 0.0f);
+            }
+            if (difference.y/direction.y > 0) {
+                lowestDistance = min(lowestDistance, abs((abs(difference.y)-WORLD_DIMENSIONS.y/2.0f) / direction.y));
+                differenceFromPrevious = vec3(0.0f, 1.0f, 0.0f);
+            }
+            if (difference.z/direction.z > 0) {
+                lowestDistance =min(lowestDistance,  abs((abs(difference.z)-WORLD_DIMENSIONS.z/2.0f) / direction.z));
+                differenceFromPrevious = vec3(0.0f, 0.0f, 1.0f);
+            }
+
         }
         else {
             if (direction.x > 0) {
                 lowestDistance = (size - (position.x - lowestNode.minX)) / abs(direction.x);
+                differenceFromPrevious = vec3(1.0f, 0.0f, 0.0f);
             } else if (direction.x < 0) {
                 lowestDistance = (size - (lowestNode.maxX - position.x)) / abs(direction.x);
+                differenceFromPrevious = vec3(-1.0f, 0.0f, 0.0f);
             }
             if (direction.y > 0) {
-                lowestDistance = min(lowestDistance, (size - (position.y - lowestNode.minY)) / abs(direction.y));
+                if ((size - (position.y - lowestNode.minY)) / abs(direction.y) < lowestDistance) {
+                    lowestDistance = (size - (position.y - lowestNode.minY)) / abs(direction.y);
+                    differenceFromPrevious = vec3(0.0f, 1.0f, 0.0f);
+                }
             } else if (direction.y < 0) {
-                lowestDistance = min(lowestDistance, (size - (lowestNode.maxY - position.y)) / abs(direction.y));
+                if ((size - (lowestNode.maxY - position.y)) / abs(direction.y) < lowestDistance) {
+                    lowestDistance = (size - (lowestNode.maxY - position.y)) / abs(direction.y);
+                    differenceFromPrevious = vec3(0.0f, -1.0f, 0.0f);
+                }
             }
             if (direction.z > 0) {
-                lowestDistance = min(lowestDistance, (size - (position.z - lowestNode.minZ)) / abs(direction.z));
+                if ((size - (position.z - lowestNode.minZ)) / abs(direction.z) < lowestDistance) {
+                    lowestDistance = (size - (position.z - lowestNode.minZ)) / abs(direction.z);
+                    differenceFromPrevious = vec3(0.0f, 0.0f, 1.0f);
+                }
             } else if (direction.z < 0) {
-                lowestDistance = min(lowestDistance, (size - (lowestNode.maxZ - position.z)) / abs(direction.z));
+                if ((size - (lowestNode.maxZ - position.z)) / abs(direction.z) < lowestDistance) {
+                    lowestDistance = (size - (lowestNode.maxZ - position.z)) / abs(direction.z);
+                    differenceFromPrevious = vec3(0.0f, 0.0f, -1.0f);
+                }
             }
         }
         lowestDistance = lowestDistance+0.001f;
         position += direction*lowestDistance;
         totalDistance += lowestDistance;
     }
+    returnColor += skyColor*(1.0f-opacityUsed);
 
     return returnColor;
 }
@@ -217,6 +271,7 @@ float CANVAS_DISTANCE = 1;
 vec3 WORLD_UP = vec3(0.0f, 0.0f, 1.0f);
 Ray createRay() {
     vec2 uv = vec2(gl_GlobalInvocationID.xy) / vec2(imageSize(outputImage))*2-1;
+    //uv.x *= ubo.aspectRatio;
 	vec3 uvRight = normalize(cross(ubo.viewDirection, WORLD_UP));
 	vec3 uvDown = normalize(cross(ubo.viewDirection, uvRight));
 	vec3 toCanvas = ubo.viewDirection * CANVAS_DISTANCE;
@@ -231,5 +286,6 @@ void main() {
     Ray ray = createRay();
 
     imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.aspectRatio/180.0f));
     //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4((gl_GlobalInvocationID.x/16)/15.0f, (gl_GlobalInvocationID.y/16)/15.0f, (gl_GlobalInvocationID.x % 16)/15.0f, 1.0f));
 }

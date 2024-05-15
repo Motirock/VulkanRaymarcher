@@ -56,23 +56,7 @@ namespace VkUtils {
         alignas(16) glm::vec3 position;   
         alignas(16) glm::vec3 viewDirection;
         alignas(16) float FOV;
-        // alignas(16) const uint32_t CHILDREN_INDEX_MASK  =   0b00000000011111111111111111111111;
-        // alignas(16) const uint32_t IS_HOMOGENEOUS_MASK  =   0b00000000100000000000000000000000;
-        // alignas(16) const uint32_t CHILDREN_MASK_MASK   =   0b11111111000000000000000000000000;
-        // alignas(16) const uint32_t COLOR_RED_MASK       =   0b00000000000000000000000011111111;
-        // alignas(16) const uint32_t COLOR_GREEN_MASK     =   0b00000000000000001111111100000000;
-        // alignas(16) const uint32_t COLOR_BLUE_MASK      =   0b00000000111111110000000000000000;
-        // alignas(16) const uint32_t COLOR_ALPHA_MASK     =   0b11111111000000000000000000000000;
-        // alignas(16) const uint32_t CHILDREN_MASK_MASKS[8] = {
-        //                                     0b00000001000000000000000000000000,
-        //                                     0b00000010000000000000000000000000,
-        //                                     0b00000100000000000000000000000000,
-        //                                     0b00001000000000000000000000000000,
-        //                                     0b00010000000000000000000000000000,
-        //                                     0b00100000000000000000000000000000,
-        //                                     0b01000000000000000000000000000000,
-        //                                     0b10000000000000000000000000000000;
-        // };
+        alignas(16) float aspectRatio;
     };
 }
 

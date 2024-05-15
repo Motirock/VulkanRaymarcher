@@ -181,13 +181,14 @@ private:
 
     double lastTime = 0.0f;
 
-    glm::vec3 cameraPosition = glm::vec3(WORLD_DIMENSIONS.x/2.0f, WORLD_DIMENSIONS.y/2.0f, WORLD_DIMENSIONS.z);
+    glm::vec3 cameraPosition = glm::vec3(WORLD_DIMENSIONS.x/2.0f, WORLD_DIMENSIONS.y/2.0f, WORLD_DIMENSIONS.z/2.0f);
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(0, 0);
     float FOV = 90.0f;
+    float aspectRatio = WIDTH/(float) HEIGHT;
 
-    float speed = 10.0f;
+    float speed = 20.0f;
     float turningSensitivity = 0.2f;
 
     float mouseX = 0.0f, mouseY = 0.0f;
@@ -276,6 +277,7 @@ private:
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
         auto app = reinterpret_cast<VoxelRaymarcherApplication*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
+        app->aspectRatio = width/(float) height;
     }
 
     static void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods) {
@@ -1600,6 +1602,8 @@ private:
         ubo.position = cameraPosition;
         ubo.viewDirection = viewDirection;
         ubo.FOV = FOV;
+        ubo.aspectRatio = aspectRatio;
+        //std::cout << aspectRatio << ' ';
         
         //std::cout << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << std::endl;
         //std::cout << viewAngles.x << " " << viewAngles.y << std::endl;
@@ -1608,8 +1612,9 @@ private:
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     }
 
+    float noiseOffset = 0.0f;
     void updateOctreeStorageBuffer() {
-        if (ticks == 1) {
+        if (ticks == 0 || glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
             const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
 	        const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
 
@@ -1626,7 +1631,8 @@ private:
                         for (int z = 0; z < CHUNK_SIZE; z++) {
                             for (int y = 0; y < CHUNK_SIZE; y++) {
                                 for (int x = 0; x < CHUNK_SIZE; x++) {
-                                    values[valueIndex] = terrainNoise.noise2D_01((float) x/CHUNK_SIZE, (float) y/CHUNK_SIZE) >= (float) z/CHUNK_SIZE ? 1 : 0;
+                                    //values[valueIndex] = terrainNoise.noise2D_01((float) x/CHUNK_SIZE+i, (float) y/CHUNK_SIZE+j)*WORLD_CHUNK_SIZE_Z >= (float) z/CHUNK_SIZE+k ? 1 : 0;
+                                    values[valueIndex] = terrainNoise.noise3D_01((float) x/CHUNK_SIZE+i+noiseOffset, (float) y/CHUNK_SIZE+j, (float) z/CHUNK_SIZE+k) >= 0.5 ? 1 : 0;
                                     valueIndex++;
                                 }
                             }
@@ -1649,6 +1655,8 @@ private:
             }
 
             memcpy(octreeStorageBufferMapped, &octreeGrid, sizeof(GPUOctreeGrid));
+
+            noiseOffset += 1.0f/TPS;
         }
     }
 
