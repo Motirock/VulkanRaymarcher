@@ -55,7 +55,7 @@ namespace VkUtils {
     struct UniformBufferObject {
         alignas(16) glm::vec3 position;   
         alignas(16) glm::vec3 viewDirection;
-        alignas(16) float FOV;
+        float FOVScaling;
         alignas(16) float aspectRatio;
     };
 }

@@ -3,7 +3,7 @@
 layout (binding = 0) uniform UniformBufferObject {
     vec3 position;
     vec3 viewDirection;
-    float FOV;
+    float FOVScaling;
     float aspectRatio;
 } ubo;
 
@@ -147,12 +147,40 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
         vec4(1.0f, 0.0f, 0.0f, 1.0f));
 }
 
-vec2 floorColors = vec2(0.7f, 0.0f), floorAbsorbedFactors = vec2(0.2f, 1.0f);
+float MAX_DISTANCE = 10000.0f;
+float getDistanceToEnterWorld(in vec3 position, in vec3 direction) {
+    float distance = MAX_DISTANCE;
+
+    vec3 rayOrigin = position;
+    vec3 rayDirection = normalize(direction);
+
+    //Calculate the intersection point with the world boundaries
+    vec3 tMin = -rayOrigin / rayDirection;
+    vec3 tMax = (vec3(WORLD_DIMENSIONS) - rayOrigin) / rayDirection;
+
+    //Find the minimum and maximum t values
+    vec3 t1 = min(tMin, tMax);
+    vec3 t2 = max(tMin, tMax);
+
+    //Find the maximum of the minimum t values
+    float tNear = max(max(t1.x, t1.y), t1.z);
+
+    //Check if the ray intersects the world
+    if (tNear >= 0.0 && tNear < distance) {
+        distance = tNear;
+    }
+
+
+    
+
+    return distance;
+}
+
+vec2 floorColors = vec2(0.7f, 0.0f), floorAbsorbedFactors = vec2(0.7f, 1.0f);
 float minAbsorbtion = 0.5f;
 float TEMP_ABSORBTION = 1.0;
 int MAX_STEPS = 1000, MAX_REFLECTIONS = 10;
-float MAX_DISTANCE = 10000.0f;
-const vec3 skyColor = vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f);
+const vec3 skyColor = vec3(0.0f);//vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f);
 vec3 marchRay(in Ray ray) {
     vec3 returnColor = vec3(0.0f);
     float opacityUsed = 0.0f;
@@ -163,8 +191,8 @@ vec3 marchRay(in Ray ray) {
     vec3 differenceFromPrevious = vec3(0.0f);
     int reflections = 0;
 
-    int i = 0;
-    while (i++ < MAX_STEPS && totalDistance < MAX_DISTANCE && opacityUsed < 1.0f) {
+    int stepCount = 0;
+    while (stepCount++ < MAX_STEPS && totalDistance < MAX_DISTANCE && opacityUsed < 1.0f) {
         if (position.z <= 0) {
             totalDistance -= position.z/direction.z;
             position = position-direction*position.z/direction.z;
@@ -209,23 +237,11 @@ vec3 marchRay(in Ray ray) {
         if (position.x < 0 || position.x >= WORLD_DIMENSIONS.x || position.y < 0 || position.y >= WORLD_DIMENSIONS.y || position.z < 0 || position.z >= WORLD_DIMENSIONS.z) {
             differenceFromPrevious = vec3(0.0f);
 
+
+            lowestDistance = min(lowestDistance, getDistanceToEnterWorld(position, direction));
+
             if (direction.z < 0)
-                lowestDistance = min(lowestDistance, abs((position.z) / direction.z));
-
-            vec3 difference = WORLD_DIMENSIONS/2.0f-position;
-            if (difference.x/direction.x > 0) {
-                lowestDistance = min(lowestDistance, abs((abs(difference.x)-WORLD_DIMENSIONS.x/2.0f) / direction.x));
-                differenceFromPrevious = vec3(1.0f, 0.0f, 0.0f);
-            }
-            if (difference.y/direction.y > 0) {
-                lowestDistance = min(lowestDistance, abs((abs(difference.y)-WORLD_DIMENSIONS.y/2.0f) / direction.y));
-                differenceFromPrevious = vec3(0.0f, 1.0f, 0.0f);
-            }
-            if (difference.z/direction.z > 0) {
-                lowestDistance =min(lowestDistance,  abs((abs(difference.z)-WORLD_DIMENSIONS.z/2.0f) / direction.z));
-                differenceFromPrevious = vec3(0.0f, 0.0f, 1.0f);
-            }
-
+                lowestDistance = min(lowestDistance, abs(position.z / direction.z));
         }
         else {
             if (direction.x > 0) {
@@ -258,20 +274,20 @@ vec3 marchRay(in Ray ray) {
                 }
             }
         }
-        lowestDistance = lowestDistance+0.001f;
+        lowestDistance = max(lowestDistance*1.001f, 0.001f);
         position += direction*lowestDistance;
         totalDistance += lowestDistance;
     }
     returnColor += skyColor*(1.0f-opacityUsed);
 
-    return returnColor;
+    return returnColor;//*0.0f+vec3(1.0f)*float(stepCount)/50;
 }
 
-float CANVAS_DISTANCE = 1;
+float CANVAS_DISTANCE = 0.5;
 vec3 WORLD_UP = vec3(0.0f, 0.0f, 1.0f);
 Ray createRay() {
-    vec2 uv = vec2(gl_GlobalInvocationID.xy) / vec2(imageSize(outputImage))*2-1;
-    //uv.x *= ubo.aspectRatio;
+    vec2 uv = (vec2(gl_GlobalInvocationID.xy) / vec2(imageSize(outputImage))*2-1)*ubo.FOVScaling;
+    uv.x *= ubo.aspectRatio;
 	vec3 uvRight = normalize(cross(ubo.viewDirection, WORLD_UP));
 	vec3 uvDown = normalize(cross(ubo.viewDirection, uvRight));
 	vec3 toCanvas = ubo.viewDirection * CANVAS_DISTANCE;
@@ -286,6 +302,6 @@ void main() {
     Ray ray = createRay();
 
     imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));
-    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.aspectRatio/180.0f));
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.aspectRatio/2.0f));
     //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4((gl_GlobalInvocationID.x/16)/15.0f, (gl_GlobalInvocationID.y/16)/15.0f, (gl_GlobalInvocationID.x % 16)/15.0f, 1.0f));
 }

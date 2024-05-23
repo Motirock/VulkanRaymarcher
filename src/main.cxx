@@ -185,7 +185,7 @@ private:
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(0, 0);
-    float FOV = 90.0f;
+    float FOV = 60.0f;
     float aspectRatio = WIDTH/(float) HEIGHT;
 
     float speed = 20.0f;
@@ -202,6 +202,8 @@ private:
         float speed = this->speed;
         if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
             speed = this->speed/5.0f;
+        if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS)
+            speed = this->speed*5.0f;
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             cameraPosition += viewDirection*speed/(float) TPS;
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -243,6 +245,16 @@ private:
         }
         if (unlocking)
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+
+        if (scrollAmount > 0)
+            FOV -= 5.0f;
+        if (scrollAmount < 0)
+            FOV += 5.0f;
+        scrollAmount = 0;
+        if (FOV < 5.0f)
+            FOV = 5.0f;
+        if (FOV > 90.0f)    
+            FOV = 90.0f;
 
         viewAngles = glm::vec2(fmod(viewAngles.x, 360.0f), glm::clamp(viewAngles.y, -89.9f, 89.9f));
         viewDirection = glm::normalize(glm::vec3(
@@ -1169,9 +1181,6 @@ private:
         vertices.push_back({{1.0f, 3.0f}, {1.0f, 1.0f, 0.0f}});
         vertices.push_back({{1.0f, -1.0f}, {1.0f, 0.0f, 0.0f}});
 
-        
-
-
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
         VkBuffer stagingBuffer;
@@ -1601,9 +1610,8 @@ private:
         UniformBufferObject ubo{};
         ubo.position = cameraPosition;
         ubo.viewDirection = viewDirection;
-        ubo.FOV = FOV;
+        ubo.FOVScaling = glm::tan(FOV/360.0f*glm::pi<float>());
         ubo.aspectRatio = aspectRatio;
-        //std::cout << aspectRatio << ' ';
         
         //std::cout << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << std::endl;
         //std::cout << viewAngles.x << " " << viewAngles.y << std::endl;
