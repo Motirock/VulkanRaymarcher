@@ -1,4 +1,5 @@
 #version 450
+//#extension GL_ARB_separate_shader_objects : disable
 
 layout (binding = 0) uniform UniformBufferObject {
     vec3 position;
@@ -18,15 +19,11 @@ struct ReturnedOctreeNode {
     vec4 color;
 };
 
-struct Octree {
+layout(std430, binding = 2) readonly buffer Octree {
     GPUOctreeNode baseNode;
     GPUOctreeNode nodes[37449];//37449
     ivec3 position;
-};
-
-layout(std430, binding = 2) readonly buffer TEMP{
-    Octree octrees[8];
-} octreeGrid;
+} octreeGrid[8000];
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
 
@@ -67,7 +64,7 @@ const uint COLOR_ALPHA_MASK     =   0xFF000000;//0b11111111000000000000000000000
 
 
 uint getChildrenIndex(in GPUOctreeNode node) {
-    return node.data & CHILDREN_INDEX_MASK;
+    return (node.data & CHILDREN_INDEX_MASK);
 }
 
 uint getChildrenNonEmptyMask(in GPUOctreeNode node) {
@@ -82,19 +79,28 @@ vec4 getColor(in GPUOctreeNode node) {
     return vec4((node.data & COLOR_RED_MASK) / 255.0f, ((node.data & COLOR_GREEN_MASK) >> 8) / 255.0f, ((node.data & COLOR_BLUE_MASK) >> 16) / 255.0f, ((node.data & COLOR_ALPHA_MASK) >> 24) / 255.0f);
 }
 
-const vec3 tempColors[8] = {
-    vec3(0.0f, 0.0f, 0.0f),
-    vec3(1.0f, 0.0f, 0.0f),
-    vec3(0.0f, 1.0f, 0.0f),
-    vec3(1.0f, 1.0f, 0.0f),
-    vec3(0.0f, 0.0f, 1.0f),
-    vec3(1.0f, 0.0f, 1.0f),
-    vec3(0.0f, 1.0f, 1.0f),
-    vec3(1.0f, 1.0f, 1.0f),
-};
+// struct ChildrenIndexStack {
+//     int stack[6] = {0, -1, -1, -1, -1, -1};
+    
+//     void resetPastIndex(in int index) {
+//         for (int i = index; i < 6; i++)
+//             stack[i] = -1;
+//     }
+// } ChildrenIndexStack;
+
+// const vec3 tempColors[8] = {
+//     vec3(0.0f, 0.0f, 0.0f),
+//     vec3(1.0f, 0.0f, 0.0f),
+//     vec3(0.0f, 1.0f, 0.0f),
+//     vec3(1.0f, 1.0f, 0.0f),
+//     vec3(0.0f, 0.0f, 1.0f),
+//     vec3(1.0f, 0.0f, 1.0f),
+//     vec3(0.0f, 1.0f, 1.0f),
+//     vec3(1.0f, 1.0f, 1.0f),
+// };
 
 const int CHUNK_SIZE = 32;
-const ivec3 WORLD_CHUNK_SIZES = ivec3(2);
+const ivec3 WORLD_CHUNK_SIZES = ivec3(20, 20, 20);
 const ivec3 WORLD_DIMENSIONS = WORLD_CHUNK_SIZES*CHUNK_SIZE;
 ReturnedOctreeNode emptyNode = ReturnedOctreeNode(0, 0, 0, 0, 0, 0, vec4(0.0f));
 ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
@@ -103,9 +109,15 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
 
     int chunkIndex = int(floor(position.x/CHUNK_SIZE) + floor(position.y/CHUNK_SIZE)*WORLD_CHUNK_SIZES.x + floor(position.z/CHUNK_SIZE)*WORLD_CHUNK_SIZES.x*WORLD_CHUNK_SIZES.y);
     
-    GPUOctreeNode node = octreeGrid.octrees[chunkIndex].baseNode;
+    GPUOctreeNode node = octreeGrid[chunkIndex].baseNode;
+    ivec3 octreePosition = octreeGrid[chunkIndex].position;
+    if (node.data == 0)
+        return ReturnedOctreeNode(
+            octreePosition.x, octreePosition.x+CHUNK_SIZE, 
+            octreePosition.y, octreePosition.y+CHUNK_SIZE,
+            octreePosition.z, octreePosition.z+CHUNK_SIZE,
+            vec4(0.0f));
 
-    ivec3 octreePosition = octreeGrid.octrees[chunkIndex].position;
     position -= octreePosition;
 
     float halfSize = CHUNK_SIZE/2.0f;
@@ -134,10 +146,10 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
                 octreePosition.x+minX, octreePosition.x+minX+int(halfSize*2.0f), 
                 octreePosition.y+minY, octreePosition.y+minY+int(halfSize*2.0f), 
                 octreePosition.z+minZ, octreePosition.z+minZ+int(halfSize*2.0f), 
-                getColor(octreeGrid.octrees[chunkIndex].nodes[getChildrenIndex(node)+index]));
+                getColor(octreeGrid[chunkIndex].nodes[getChildrenIndex(node)+index]));
         }
 
-        node = octreeGrid.octrees[chunkIndex].nodes[getChildrenIndex(node)+index];
+        node = octreeGrid[chunkIndex].nodes[getChildrenIndex(node)+index];
     }
 
     return ReturnedOctreeNode(
@@ -170,17 +182,15 @@ float getDistanceToEnterWorld(in vec3 position, in vec3 direction) {
         distance = tNear;
     }
 
-
-    
-
     return distance;
 }
 
 vec2 floorColors = vec2(0.7f, 0.0f), floorAbsorbedFactors = vec2(0.7f, 1.0f);
 float minAbsorbtion = 0.5f;
 float TEMP_ABSORBTION = 1.0;
-int MAX_STEPS = 1000, MAX_REFLECTIONS = 10;
-const vec3 skyColor = vec3(0.0f);//vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f);
+int MAX_STEPS = 1000;
+vec4 previousColor = vec4(0.0f);
+const vec3 skyColor = vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f);
 vec3 marchRay(in Ray ray) {
     vec3 returnColor = vec3(0.0f);
     float opacityUsed = 0.0f;
@@ -188,8 +198,14 @@ vec3 marchRay(in Ray ray) {
     vec3 direction = ray.direction;
     float totalDistance = 0.0f;
 
+    if (direction.x == 0.0f)
+        direction.x = 0.0001f;
+    if (direction.y == 0.0f)
+        direction.y = 0.0001f;
+    if (direction.z == 0.0f)
+        direction.z = 0.0001f;
+
     vec3 differenceFromPrevious = vec3(0.0f);
-    int reflections = 0;
 
     int stepCount = 0;
     while (stepCount++ < MAX_STEPS && totalDistance < MAX_DISTANCE && opacityUsed < 1.0f) {
@@ -199,8 +215,23 @@ vec3 marchRay(in Ray ray) {
             //floor(position.y-direction.y*position.z/direction.z))
 
             vec2 difference = (WORLD_DIMENSIONS/2.0f-position).xy;
-            float distance = sqrt(difference.x*difference.x+difference.y*difference.y);
-            if (int(pow(distance, 0.4f)) % 2 == 0) {
+            //Rings
+            //float distance = sqrt(difference.x*difference.x+difference.y*difference.y);
+            // if (int(pow(distance, 0.4f)) % 2 == 0) {
+            //     returnColor += vec3(floorColors.x)*(1.0f-opacityUsed)*floorAbsorbedFactors.x;
+            //     opacityUsed += floorAbsorbedFactors.x*(1.0f-opacityUsed);
+            //     if (opacityUsed >= 1.0f)
+            //         break;
+            //     direction = reflect(direction, vec3(0.0f, 0.0f, 1.0f));
+            // } else {
+            //     returnColor += vec3(floorColors.y)*(1.0f-opacityUsed)*floorAbsorbedFactors.y;
+            //     opacityUsed += floorAbsorbedFactors.y*(1.0f-opacityUsed);
+            //     if (opacityUsed >= 1.0f)
+            //         break;
+            //     direction = reflect(direction, vec3(0.0f, 0.0f, 1.0f));
+            // }
+            //Checkerboard
+            if (int(floor(difference.x/64)+floor(difference.y/64)) % 2 == 0) {
                 returnColor += vec3(floorColors.x)*(1.0f-opacityUsed)*floorAbsorbedFactors.x;
                 opacityUsed += floorAbsorbedFactors.x*(1.0f-opacityUsed);
                 if (opacityUsed >= 1.0f)
@@ -217,26 +248,18 @@ vec3 marchRay(in Ray ray) {
 
         ReturnedOctreeNode lowestNode = getLowestOctreeNode(position);
 
-        if (lowestNode.color.a > 0.0f) {
-            returnColor += lowestNode.color.rgb*(1.0f-opacityUsed)*max(TEMP_ABSORBTION, minAbsorbtion);
-            opacityUsed += max(TEMP_ABSORBTION, minAbsorbtion)*(1.0f-opacityUsed)*1.2f;
-            if (reflections >= MAX_REFLECTIONS) {
-                return returnColor*opacityUsed+vec3(0x87/255.0f, 0xCE/255.0f, 0xEB/255.0f)*(1.0f-opacityUsed);
-            }
-            //return vec3(abs(differenceFromPrevious.x), abs(differenceFromPrevious.y), abs(differenceFromPrevious.z));
-            if (opacityUsed >= 1.0f)
+        if (lowestNode.color.a > 0.0f && previousColor != lowestNode.color.rgba) {
+            returnColor += lowestNode.color.rgb*(1.0f-opacityUsed)*lowestNode.color.a;
+            opacityUsed += lowestNode.color.a*(1.0f-opacityUsed);
+            
+            if (opacityUsed >= 0.95f)
                 break;
-            if (differenceFromPrevious != vec3(0.0f) && reflections < MAX_REFLECTIONS) {
-                direction = reflect(direction, differenceFromPrevious);
-                reflections++;
-            }
         }
 
         int size = lowestNode.maxX-lowestNode.minX;
         float lowestDistance = MAX_DISTANCE-totalDistance;
         if (position.x < 0 || position.x >= WORLD_DIMENSIONS.x || position.y < 0 || position.y >= WORLD_DIMENSIONS.y || position.z < 0 || position.z >= WORLD_DIMENSIONS.z) {
             differenceFromPrevious = vec3(0.0f);
-
 
             lowestDistance = min(lowestDistance, getDistanceToEnterWorld(position, direction));
 
@@ -274,13 +297,20 @@ vec3 marchRay(in Ray ray) {
                 }
             }
         }
-        lowestDistance = max(lowestDistance*1.001f, 0.001f);
+        lowestDistance = max(lowestDistance*1.001f, 0.01f);
+        //lowestDistance = 0.01f;
         position += direction*lowestDistance;
         totalDistance += lowestDistance;
+        previousColor = lowestNode.color.rgba;
     }
     returnColor += skyColor*(1.0f-opacityUsed);
 
-    return returnColor;//*0.0f+vec3(1.0f)*float(stepCount)/50;
+    if (direction.x == 0.0f || direction.y == 0.0f || direction.z == 0.0f)
+        return vec3(1.0f, 0.0f, 0.0f);
+
+    float brightness = max(dot(differenceFromPrevious, normalize(vec3(-0.5f, -0.7f, -1.0f))), 0.2f);
+    return returnColor*brightness;//*0.5f+0.5f*vec3(1.0f)*float(stepCount)/100;
+    //return vec3(stepCount/50.0f, 1.0f-stepCount/50.0f, 0.0f);
 }
 
 float CANVAS_DISTANCE = 0.5;
@@ -304,4 +334,5 @@ void main() {
     imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));
     //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(ubo.aspectRatio/2.0f));
     //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4((gl_GlobalInvocationID.x/16)/15.0f, (gl_GlobalInvocationID.y/16)/15.0f, (gl_GlobalInvocationID.x % 16)/15.0f, 1.0f));
+    //imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(gl_GlobalInvocationID.x/15.0f, gl_GlobalInvocationID.y/15.0f, 0.0f, 1.0f));
 }

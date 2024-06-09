@@ -4,7 +4,7 @@
 #include "OctreeNode.h"
 
 const int32_t CHUNK_SIZE = 32;
-const uint32_t WORLD_CHUNK_SIZE_X = 2, WORLD_CHUNK_SIZE_Y = 2, WORLD_CHUNK_SIZE_Z = 2;
+const uint32_t WORLD_CHUNK_SIZE_X = 20, WORLD_CHUNK_SIZE_Y = 20, WORLD_CHUNK_SIZE_Z = 20;
 const glm::ivec3 WORLD_DIMENSIONS = glm::ivec3(WORLD_CHUNK_SIZE_X, WORLD_CHUNK_SIZE_Y, WORLD_CHUNK_SIZE_Z)*32;
 
 struct Octree {
@@ -22,12 +22,8 @@ struct GPUOctree {
 
     GPUOctree();
     GPUOctree(Octree &octree, const int &nodeSlotsUsed);
-};
 
-struct GPUOctreeGrid {
-    GPUOctree octrees[WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y*WORLD_CHUNK_SIZE_Z]; 
-
-    GPUOctreeGrid();
+    int *getValues();
 };
 
 #endif
