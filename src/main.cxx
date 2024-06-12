@@ -49,11 +49,11 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 #include <set>
 #include <random>
 
-#include "Chunk.h"
+#include "Region.h"
 
 using namespace VkUtils;
 
-const uint32_t STORAGE_IMAGE_SIZE = 1024;
+const uint32_t STORAGE_IMAGE_SIZE = 256;
 const uint32_t WIDTH = 1024;
 const uint32_t HEIGHT = 1024;
 
@@ -418,7 +418,8 @@ private:
                     ", estimated maximum FPS: " << (int) (1.0f/averageFrameTime) << '\n'
                     //<< "Vertex count: " << vertexCount << " Vertex memory size: " << vertexCount*sizeof(Vertex) << "\n"
                     << "Rays cast: " << STORAGE_IMAGE_SIZE*STORAGE_IMAGE_SIZE << '\n'
-                    << "Voxel memory (bytes): " << sizeof(GPUOctree)*VOXEL_GRID_SIZE << '\n'
+                    << "Voxel memory:         " << sizeof(GPUOctree)*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y*WORLD_CHUNK_SIZE_Z/1'000'000'000.0 << " gb\n"
+                    << "GPU memory allocated: " << sizeof(GPUOctree)*VOXEL_GRID_SIZE/1'000'000'000.0 << " gb\n"
                     << '\n';
                 }
                 #endif
@@ -1025,6 +1026,8 @@ private:
     
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+
+        //throw std::runtime_error(std::to_string(properties.limits.maxStorageBufferRange));
         
         VkSamplerCreateInfo samplerInfo{};        
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -1235,48 +1238,58 @@ private:
 
         octreeStorageBuffers = new VkBuffer[VOXEL_GRID_SIZE];
         octreeStorageBuffersMemory = new VkDeviceMemory[VOXEL_GRID_SIZE];
-        octreeStorageBuffersMapped = new GPUOctree*[VOXEL_GRID_SIZE];
+        //octreeStorageBuffersMapped = new GPUOctree*[VOXEL_GRID_SIZE];
 
+        VkBuffer a;
+        VkDeviceMemory b;
 
-        for (int i = 0; i < VOXEL_GRID_SIZE; i++) {
-            createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, octreeStorageBuffers[i], octreeStorageBuffersMemory[i]);
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+
+        std::cout << bufferSize*4096 << ' ' << properties.limits.maxMemoryAllocationCount << ' ' << properties.limits.maxStorageBufferRange << std::endl;
+        //createBuffer(bufferSize*4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, a, b);
+        //vkDestroyBuffer(device, a, nullptr);
+
+        // for (int i = 0; i < VOXEL_GRID_SIZE; i++) {
+        //     createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT /* TODO */, octreeStorageBuffers[i], octreeStorageBuffersMemory[i]);
         
-            vkMapMemory(device, octreeStorageBuffersMemory[i], 0, bufferSize, 0, (void**) (&(octreeStorageBuffersMapped[i])));
-        }
-
-        // const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
-        // const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
-
-        // for (int i = 0; i < WORLD_DIMENSIONS.x/CHUNK_SIZE; i++) {
-        //     for (int j = 0; j < WORLD_DIMENSIONS.y/CHUNK_SIZE; j++) {
-        //         for (int k = 0; k < WORLD_DIMENSIONS.z/CHUNK_SIZE; k++) {
-        //             Chunk chunk = Chunk(glm::ivec3(i, j, k)*CHUNK_SIZE);
-                    
-        //             chunk.generateValues(terrainNoise);
-                    
-        //             chunk.createOctree();
-
-        //             std::cout << "Chunk " << i << " " << j << " " << k << " created\n";
-
-        //             VkDeviceSize bufferSize = sizeof(GPUOctree);
-        //             VkBuffer stagingBuffer;
-        //             VkDeviceMemory stagingBufferMemory;
-        //             createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        //             void *data;
-        //             vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        //                 memcpy(data, &chunk.octree, (size_t) bufferSize);
-        //             vkUnmapMemory(device, stagingBufferMemory);
-
-        //             createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffers[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], octreeStorageBuffersMemory[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y]);
-
-        //             copyBuffer(stagingBuffer, octreeStorageBuffers[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], bufferSize);
-
-        //             vkDestroyBuffer(device, stagingBuffer, nullptr);
-        //             vkFreeMemory(device, stagingBufferMemory, nullptr);
-        //         }
-        //     }
+        //     vkMapMemory(device, octreeStorageBuffersMemory[i], 0, bufferSize, 0, (void**) (&(octreeStorageBuffersMapped[i])));
         // }
+
+        const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
+        const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
+        
+
+        for (int i = 0; i < WORLD_DIMENSIONS.x/CHUNK_SIZE; i++) {
+            for (int j = 0; j < WORLD_DIMENSIONS.y/CHUNK_SIZE; j++) {
+                for (int k = 0; k < WORLD_DIMENSIONS.z/CHUNK_SIZE; k++) {
+                    Chunk chunk = Chunk(glm::ivec3(i, j, k)*CHUNK_SIZE);
+                    
+                    chunk.generateValues(terrainNoise);
+                    
+                    chunk.createOctree();
+
+                    std::cout << "Chunk " << i << " " << j << " " << k << " created\n";
+
+                    VkDeviceSize bufferSize = sizeof(GPUOctree);
+                    VkBuffer stagingBuffer;
+                    VkDeviceMemory stagingBufferMemory;
+                    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+                    void *data;
+                    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+                        memcpy(data, &chunk.octree, (size_t) bufferSize);
+                    vkUnmapMemory(device, stagingBufferMemory);
+
+                    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffers[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], octreeStorageBuffersMemory[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y]);
+
+                    copyBuffer(stagingBuffer, octreeStorageBuffers[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], bufferSize);
+
+                    vkDestroyBuffer(device, stagingBuffer, nullptr);
+                    vkFreeMemory(device, stagingBufferMemory, nullptr);
+                }
+            }
+        }
     }
 
     void createDescriptorPool() {
@@ -1408,7 +1421,7 @@ private:
             descriptorWrites[2].descriptorCount = VOXEL_GRID_SIZE;
             descriptorWrites[2].pBufferInfo = octreeStorageBuffersInfo;
 
-            vkUpdateDescriptorSets(device, 3, descriptorWrites.data(), 0, nullptr);
+            vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
             std::cout << "AAAAAAA" << '\n';
         }
     }
@@ -1590,7 +1603,6 @@ private:
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("Failed to record compute command buffer!");
         }
-
     }
 
     VkCommandBuffer beginSingleTimeCommands() {
@@ -1687,7 +1699,7 @@ private:
     float noiseOffset = 0.0f;
     Chunk chunk = Chunk(glm::ivec3(0));
     void updateOctreeStorageBuffer() {
-        if (ticks == 0) {
+        if (ticks == 0 && false) {
             const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
 	        const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
 
@@ -1712,6 +1724,7 @@ private:
 
             noiseOffset += 1.0f/TPS;
         }
+        
     }
 
     void drawFrame() {

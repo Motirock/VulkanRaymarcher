@@ -8,7 +8,7 @@ layout (binding = 0) uniform UniformBufferObject {
     float aspectRatio;
 } ubo;
 
-layout (binding = 1, rgba8) uniform writeonly image2D outputImage;
+layout (set = 0, binding = 1, rgba8) uniform writeonly image2D outputImage;
 
 struct GPUOctreeNode {
     uint data;
@@ -19,11 +19,11 @@ struct ReturnedOctreeNode {
     vec4 color;
 };
 
-layout(std430, binding = 2) readonly buffer Octree {
+layout(std430, binding = 2) readonly restrict buffer Octree {
     GPUOctreeNode baseNode;
-    GPUOctreeNode nodes[37449];//37449
+    GPUOctreeNode nodes[37449*8];
     ivec3 position;
-} octreeGrid[8000];
+} octreeGrid[1000];
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
 
@@ -64,7 +64,7 @@ const uint COLOR_ALPHA_MASK     =   0xFF000000;//0b11111111000000000000000000000
 
 
 uint getChildrenIndex(in GPUOctreeNode node) {
-    return (node.data & CHILDREN_INDEX_MASK);
+    return (node.data & CHILDREN_INDEX_MASK)*8;
 }
 
 uint getChildrenNonEmptyMask(in GPUOctreeNode node) {
@@ -99,8 +99,8 @@ vec4 getColor(in GPUOctreeNode node) {
 //     vec3(1.0f, 1.0f, 1.0f),
 // };
 
-const int CHUNK_SIZE = 32;
-const ivec3 WORLD_CHUNK_SIZES = ivec3(20, 20, 20);
+const int CHUNK_SIZE = 64;
+const ivec3 WORLD_CHUNK_SIZES = ivec3(10);
 const ivec3 WORLD_DIMENSIONS = WORLD_CHUNK_SIZES*CHUNK_SIZE;
 ReturnedOctreeNode emptyNode = ReturnedOctreeNode(0, 0, 0, 0, 0, 0, vec4(0.0f));
 ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
@@ -308,7 +308,7 @@ vec3 marchRay(in Ray ray) {
     if (direction.x == 0.0f || direction.y == 0.0f || direction.z == 0.0f)
         return vec3(1.0f, 0.0f, 0.0f);
 
-    float brightness = max(dot(differenceFromPrevious, normalize(vec3(-0.5f, -0.7f, -1.0f))), 0.2f);
+    float brightness = max(dot(differenceFromPrevious, normalize(vec3(-0.5f, -0.9f, -1.0f))), 0.2f);
     return returnColor*brightness;//*0.5f+0.5f*vec3(1.0f)*float(stepCount)/100;
     //return vec3(stepCount/50.0f, 1.0f-stepCount/50.0f, 0.0f);
 }
@@ -329,6 +329,7 @@ Ray createRay() {
 }
 
 void main() {
+    //return;
     Ray ray = createRay();
 
     imageStore(outputImage, ivec2(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y), vec4(marchRay(ray), 1.0f));

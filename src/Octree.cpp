@@ -5,6 +5,8 @@
 //Unoptimized, only on CPU
 
 int Octree::createOctree(int *values, glm::ivec3 position) {
+    nodes = new OctreeNode[MAX_NODE_COUNT];
+
     int nodeSlotsUsed = 0;
     baseNode.subdivide(values, CHUNK_SIZE, nodeSlotsUsed, nodes);
 
@@ -13,9 +15,15 @@ int Octree::createOctree(int *values, glm::ivec3 position) {
     return nodeSlotsUsed;
 }
 
+Octree::~Octree() {
+    delete[] nodes;
+}
+
 //Optimized, for GPU
 
 GPUOctree::GPUOctree() {
+    //nodes = new GPUOctreeNode[MAX_NODE_COUNT];
+
     position = glm::ivec3(0, 0, 0);
     baseNode = GPUOctreeNode();
     for (int i = 0; i < MAX_NODE_COUNT; i++) {
@@ -40,7 +48,7 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
         if (node.childrenIndex+7 >= UINT16_MAX)
             throw std::runtime_error("Children index out of bounds");
 
-        gpuNode.data |= node.childrenIndex;
+        gpuNode.data |= node.childrenIndex/8;
 
         for (int childrenIndexOffset = 0; childrenIndexOffset < 8; childrenIndexOffset++) {
             if (octree.nodes[node.childrenIndex+childrenIndexOffset].value == 0)
@@ -72,7 +80,7 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
             if (node.childrenIndex+7 >= UINT16_MAX)
                 throw std::runtime_error("Children index out of bounds");
 
-            gpuNode.data |= node.childrenIndex;
+            gpuNode.data |= node.childrenIndex/8;
 
             for (int childrenIndexOffset = 0; childrenIndexOffset < 8; childrenIndexOffset++) {
                 if (octree.nodes[node.childrenIndex+childrenIndexOffset].value == 0)
@@ -88,3 +96,17 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
         }
     }
 }
+
+//Region (4x4x4 chunks)
+
+Region::Region(glm::vec3 position) {
+    this->position = position;
+    for (int x = 0; x < WORLD_CHUNK_SIZE_X; x++) {
+        for (int y = 0; y < WORLD_CHUNK_SIZE_Y; y++) {
+            for (int z = 0; z < WORLD_CHUNK_SIZE_Z; z++) {
+                chunks[x][y][z] = new Chunk(glm::ivec3(x, y, z));
+            }
+        }
+    }
+}
+
