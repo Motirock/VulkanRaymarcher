@@ -9,6 +9,7 @@ struct Chunk {
     glm::vec3 position;
     GPUOctree octree;
 
+    Chunk();
     Chunk(glm::ivec3 position);
     ~Chunk();
 

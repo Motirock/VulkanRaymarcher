@@ -53,7 +53,7 @@ glslc shaders/shader.vert -o shaders/vert.spv && glslc shaders/shader.frag -o sh
 
 using namespace VkUtils;
 
-const uint32_t STORAGE_IMAGE_SIZE = 256;
+const uint32_t STORAGE_IMAGE_SIZE = 1024;
 const uint32_t WIDTH = 1024;
 const uint32_t HEIGHT = 1024;
 
@@ -153,14 +153,15 @@ private:
     VkSampler storageImageSampler;
     void *storageImageMapped;
 
-
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
 
+    VkBuffer regionStagingBuffer;
+    VkDeviceMemory regionStagingBufferMemory;
+    GPUOctree *regionStagingBufferMapped;
     VkBuffer *octreeStorageBuffers;
     VkDeviceMemory *octreeStorageBuffersMemory;
-    GPUOctree **octreeStorageBuffersMapped;
 
     VkDescriptorPool descriptorPool;
     VkDescriptorPool computeDescriptorPool;
@@ -185,7 +186,7 @@ private:
     double lastTime = 0.0f;
 
     //UBO data
-    glm::vec3 cameraPosition = glm::vec3(WORLD_DIMENSIONS.x*0.2001f, WORLD_DIMENSIONS.y*0.2f, WORLD_DIMENSIONS.z*0.9f);//glm::vec3(WORLD_DIMENSIONS.x/2.0f, WORLD_DIMENSIONS.y/2.0f, WORLD_DIMENSIONS.z/2.0f);
+    glm::vec3 cameraPosition = glm::vec3(WORLD_DIMENSIONS_VOXELS.x*0.2001f, WORLD_DIMENSIONS_VOXELS.y*0.2f, WORLD_DIMENSIONS_VOXELS.z*0.9f);//glm::vec3(WORLD_DIMENSIONS.x/2.0f, WORLD_DIMENSIONS.y/2.0f, WORLD_DIMENSIONS.z/2.0f);
     glm::vec3 viewDirection = glm::normalize(glm::vec3(1.0f, 1.0f, 1.0f));
     //Degrees, xy plane, xz plane
     glm::vec2 viewAngles = glm::vec2(-45, -45);
@@ -418,7 +419,7 @@ private:
                     ", estimated maximum FPS: " << (int) (1.0f/averageFrameTime) << '\n'
                     //<< "Vertex count: " << vertexCount << " Vertex memory size: " << vertexCount*sizeof(Vertex) << "\n"
                     << "Rays cast: " << STORAGE_IMAGE_SIZE*STORAGE_IMAGE_SIZE << '\n'
-                    << "Voxel memory:         " << sizeof(GPUOctree)*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y*WORLD_CHUNK_SIZE_Z/1'000'000'000.0 << " gb\n"
+                    << "Voxel memory:         " << sizeof(GPUOctree)*WORLD_DIMENSIONS_CHUNKS.x*WORLD_DIMENSIONS_CHUNKS.y*WORLD_DIMENSIONS_CHUNKS.z/1'000'000'000.0 << " gb\n"
                     << "GPU memory allocated: " << sizeof(GPUOctree)*VOXEL_GRID_SIZE/1'000'000'000.0 << " gb\n"
                     << '\n';
                 }
@@ -1211,7 +1212,7 @@ private:
 
         createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
 
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+        copyBuffer(stagingBuffer, vertexBuffer, 0, 0, bufferSize);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
@@ -1238,58 +1239,76 @@ private:
 
         octreeStorageBuffers = new VkBuffer[VOXEL_GRID_SIZE];
         octreeStorageBuffersMemory = new VkDeviceMemory[VOXEL_GRID_SIZE];
-        //octreeStorageBuffersMapped = new GPUOctree*[VOXEL_GRID_SIZE];
-
-        VkBuffer a;
-        VkDeviceMemory b;
 
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(physicalDevice, &properties);
 
-        std::cout << bufferSize*4096 << ' ' << properties.limits.maxMemoryAllocationCount << ' ' << properties.limits.maxStorageBufferRange << std::endl;
-        //createBuffer(bufferSize*4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, a, b);
-        //vkDestroyBuffer(device, a, nullptr);
-
-        // for (int i = 0; i < VOXEL_GRID_SIZE; i++) {
-        //     createBuffer(bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT /* TODO */, octreeStorageBuffers[i], octreeStorageBuffersMemory[i]);
-        
-        //     vkMapMemory(device, octreeStorageBuffersMemory[i], 0, bufferSize, 0, (void**) (&(octreeStorageBuffersMapped[i])));
-        // }
+        std::cout << bufferSize*512 << ' ' << properties.limits.maxMemoryAllocationCount << ' ' << properties.limits.maxStorageBufferRange << std::endl;
 
         const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
         const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
         
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, regionStagingBuffer, regionStagingBufferMemory);
 
-        for (int i = 0; i < WORLD_DIMENSIONS.x/CHUNK_SIZE; i++) {
-            for (int j = 0; j < WORLD_DIMENSIONS.y/CHUNK_SIZE; j++) {
-                for (int k = 0; k < WORLD_DIMENSIONS.z/CHUNK_SIZE; k++) {
-                    Chunk chunk = Chunk(glm::ivec3(i, j, k)*CHUNK_SIZE);
-                    
-                    chunk.generateValues(terrainNoise);
-                    
-                    chunk.createOctree();
+        vkMapMemory(device, regionStagingBufferMemory, 0, bufferSize, 0, (void**) &regionStagingBufferMapped);
 
-                    std::cout << "Chunk " << i << " " << j << " " << k << " created\n";
+        for (int i = 0; i < WORLD_DIMENSIONS_REGIONS.x; i++) {
+            for (int j = 0; j < WORLD_DIMENSIONS_REGIONS.y; j++) {
+                for (int k = 0; k < WORLD_DIMENSIONS_REGIONS.z; k++) {
+                    Region region = Region(glm::vec3(i*REGION_SIZE, j*REGION_SIZE, k*REGION_SIZE));
 
-                    VkDeviceSize bufferSize = sizeof(GPUOctree);
-                    VkBuffer stagingBuffer;
-                    VkDeviceMemory stagingBufferMemory;
-                    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+                    region.generateValues(terrainNoise);
 
-                    void *data;
-                    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-                        memcpy(data, &chunk.octree, (size_t) bufferSize);
-                    vkUnmapMemory(device, stagingBufferMemory);
+                    for (int l = 0; l < REGION_SIZE; l++) {
+                        for (int m = 0; m < REGION_SIZE; m++) {
+                            for (int n = 0; n < REGION_SIZE; n++) {
+                                int bufferIndex = l + m*REGION_SIZE + n*REGION_SIZE*REGION_SIZE;
 
-                    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffers[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], octreeStorageBuffersMemory[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y]);
+                                Chunk *chunk = region.chunks[l + m*REGION_SIZE + n*REGION_SIZE*REGION_SIZE];
+                                
+                                chunk->createOctree();
 
-                    copyBuffer(stagingBuffer, octreeStorageBuffers[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], bufferSize);
+                                std::cout << "Chunk " << i*REGION_SIZE+l << " " << j*REGION_SIZE+m << " " << k*REGION_SIZE+n << " created\n";
 
-                    vkDestroyBuffer(device, stagingBuffer, nullptr);
-                    vkFreeMemory(device, stagingBufferMemory, nullptr);
+                                memcpy(regionStagingBufferMapped, &chunk->octree, (size_t) bufferSize);
+
+                                createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffers[bufferIndex], octreeStorageBuffersMemory[bufferIndex]);
+
+                                copyBuffer(regionStagingBuffer, octreeStorageBuffers[bufferIndex], 0, 0, bufferSize);
+                            }
+                        }
+                    }
                 }
             }
         }
+
+        for (int i = 0; i < WORLD_DIMENSIONS_VOXELS.x/CHUNK_SIZE; i++) {
+            for (int j = 0; j < WORLD_DIMENSIONS_VOXELS.y/CHUNK_SIZE; j++) {
+                for (int k = 0; k < WORLD_DIMENSIONS_VOXELS.z/CHUNK_SIZE; k++) {
+                    // Chunk chunk = Chunk(glm::ivec3(i, j, k)*CHUNK_SIZE);
+                    
+                    // chunk.generateValues(terrainNoise);
+                    
+                    // chunk.createOctree();
+
+                    // std::cout << "Chunk " << i << " " << j << " " << k << " created\n" << bufferIndex << ' ' << i + j*WORLD_DIMENSIONS_CHUNKS.x + k*WORLD_DIMENSIONS_CHUNKS.x*WORLD_DIMENSIONS_CHUNKS.y;
+
+                    // memcpy(regionStagingBufferMapped, &chunk.octree, (size_t) bufferSize);
+
+                    // createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffers[bufferIndex], octreeStorageBuffersMemory[bufferIndex]);
+
+                    // copyBuffer(regionStagingBuffer, octreeStorageBuffers[bufferIndex], bufferSize);
+                
+                    // bufferIndex++;
+                }
+            }
+        }
+
+        //Move to cleanUp()
+        vkUnmapMemory(device, regionStagingBufferMemory);
+
+        vkDestroyBuffer(device, regionStagingBuffer, nullptr);
+        vkFreeMemory(device, regionStagingBufferMemory, nullptr);
     }
 
     void createDescriptorPool() {
@@ -1453,7 +1472,7 @@ private:
         vkBindBufferMemory(device, buffer, bufferMemory, 0);
     }
 
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize srcOffset, VkDeviceSize dstOffset, VkDeviceSize size) {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -1470,6 +1489,8 @@ private:
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
         VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = srcOffset;
+        copyRegion.dstOffset = dstOffset;
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
@@ -1703,16 +1724,12 @@ private:
             const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
 	        const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
 
-            for (int i = 0; i < WORLD_DIMENSIONS.x/CHUNK_SIZE; i++) {
-                for (int j = 0; j < WORLD_DIMENSIONS.y/CHUNK_SIZE; j++) {
-                    for (int k = 0; k < WORLD_DIMENSIONS.z/CHUNK_SIZE; k++) {
+            for (int i = 0; i < WORLD_DIMENSIONS_VOXELS.x/CHUNK_SIZE; i++) {
+                for (int j = 0; j < WORLD_DIMENSIONS_VOXELS.y/CHUNK_SIZE; j++) {
+                    for (int k = 0; k < WORLD_DIMENSIONS_VOXELS.z/CHUNK_SIZE; k++) {
                         Chunk chunk = Chunk(glm::ivec3(i, j, k)*CHUNK_SIZE);
                         
-                        chunk.generateValues(terrainNoise);
                         
-                        chunk.createOctree();
-
-                        memcpy(octreeStorageBuffersMapped[i + j*WORLD_CHUNK_SIZE_X + k*WORLD_CHUNK_SIZE_X*WORLD_CHUNK_SIZE_Y], &chunk.octree, sizeof(GPUOctree));
                         
                         std::cout << "Chunk " << i << " " << j << " " << k << " created" << std::endl;
                     }

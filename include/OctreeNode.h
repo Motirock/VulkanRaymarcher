@@ -1,7 +1,7 @@
 #ifndef OCTREE_NODE_H
 #define OCTREE_NODE_H
 
-const int MAX_NODE_COUNT = 37449;
+const int MAX_NODE_COUNT = 299593;
 const int MAX_VALUE = 2;
 
 const int FLAG_NO_FLAG =       0b00000000000000000000000000000000;
