@@ -3,8 +3,7 @@
 #include <stdexcept>
 #include <iostream>
 
-Region::Region(glm::vec3 position) {//: position(position) {
-    this->position = position;
+Region::Region(glm::vec3 position) : position(position) {
     for (int i = 0; i < REGION_SIZE; i++) {
         for (int j = 0; j < REGION_SIZE; j++) {
             for (int k = 0; k < REGION_SIZE; k++) {
@@ -22,7 +21,7 @@ Region::~Region() {
 
 void Region::generateValues(const siv::PerlinNoise &noise) {
     for (int i = 0; i < REGION_SIZE*REGION_SIZE*REGION_SIZE; i++) {
-        std::cout << i << ' ';
+        //std::cout << i << ' ';
         chunks[i]->generateValues(noise);
     }
 }

@@ -18,7 +18,7 @@ struct Chunk {
 
     void generateValues(const siv::PerlinNoise &noise);
 
-    void createOctree();
+    int createOctree();
 };
 
 

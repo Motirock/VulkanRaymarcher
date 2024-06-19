@@ -19,11 +19,15 @@ struct ReturnedOctreeNode {
     vec4 color;
 };
 
-layout(std430, binding = 2) readonly restrict buffer Octree {
+struct Octree {
     GPUOctreeNode baseNode;
-    GPUOctreeNode nodes[299593];
+    GPUOctreeNode nodes[15000];//299592
     ivec3 position;
-} octreeGrid[512];
+};
+
+layout(std430, binding = 2) readonly restrict buffer Region {
+    Octree octreeGrid[512];
+} regions[225];
 
 layout (local_size_x = 4, local_size_y = 4, local_size_z = 1) in;
 
@@ -99,18 +103,27 @@ vec4 getColor(in GPUOctreeNode node) {
 //     vec3(1.0f, 1.0f, 1.0f),
 // };
 
+const int REGION_SIZE = 8;
 const int CHUNK_SIZE = 64;
-const ivec3 WORLD_CHUNK_SIZES = ivec3(8);
+
+const ivec3 WORLD_REGIONS_SIZES = ivec3(15, 15, 1);
+const ivec3 WORLD_CHUNK_SIZES = ivec3(WORLD_REGIONS_SIZES)*REGION_SIZE;
 const ivec3 WORLD_DIMENSIONS = WORLD_CHUNK_SIZES*CHUNK_SIZE;
 ReturnedOctreeNode emptyNode = ReturnedOctreeNode(0, 0, 0, 0, 0, 0, vec4(0.0f));
 ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
     if (position.x < 0 || position.x >= WORLD_DIMENSIONS.x || position.y < 0 || position.y >= WORLD_DIMENSIONS.y || position.z < 0 || position.z >= WORLD_DIMENSIONS.z)
         return emptyNode;
 
-    int chunkIndex = int(floor(position.x/CHUNK_SIZE) + floor(position.y/CHUNK_SIZE)*WORLD_CHUNK_SIZES.x + floor(position.z/CHUNK_SIZE)*WORLD_CHUNK_SIZES.x*WORLD_CHUNK_SIZES.y);
-    
-    GPUOctreeNode node = octreeGrid[chunkIndex].baseNode;
-    ivec3 octreePosition = octreeGrid[chunkIndex].position;
+
+    int chunkIndex = int(floor(position.x/CHUNK_SIZE))%REGION_SIZE + int(floor(position.y/CHUNK_SIZE))%REGION_SIZE*REGION_SIZE + int(floor(position.z/CHUNK_SIZE))%REGION_SIZE*REGION_SIZE*REGION_SIZE;
+    int regionIndex = int(floor(position.x/CHUNK_SIZE/REGION_SIZE) + floor(position.y/CHUNK_SIZE/REGION_SIZE)*WORLD_REGIONS_SIZES.x + floor(position.z/CHUNK_SIZE/REGION_SIZE)*WORLD_REGIONS_SIZES.x*WORLD_REGIONS_SIZES.y);
+    //regionIndex = 0;
+    //chunkIndex = 0;
+    //chunkIndex = 514;
+
+
+    GPUOctreeNode node = regions[regionIndex].octreeGrid[chunkIndex].baseNode;
+    ivec3 octreePosition = regions[regionIndex].octreeGrid[chunkIndex].position;
     if (node.data == 0)
         return ReturnedOctreeNode(
             octreePosition.x, octreePosition.x+CHUNK_SIZE, 
@@ -146,10 +159,10 @@ ReturnedOctreeNode getLowestOctreeNode(in vec3 position) {
                 octreePosition.x+minX, octreePosition.x+minX+int(halfSize*2.0f), 
                 octreePosition.y+minY, octreePosition.y+minY+int(halfSize*2.0f), 
                 octreePosition.z+minZ, octreePosition.z+minZ+int(halfSize*2.0f), 
-                getColor(octreeGrid[chunkIndex].nodes[getChildrenIndex(node)+index]));
+                getColor(regions[regionIndex].octreeGrid[chunkIndex].nodes[getChildrenIndex(node)+index]));
         }
 
-        node = octreeGrid[chunkIndex].nodes[getChildrenIndex(node)+index];
+        node = regions[regionIndex].octreeGrid[chunkIndex].nodes[getChildrenIndex(node)+index];
     }
 
     return ReturnedOctreeNode(
@@ -214,6 +227,8 @@ vec3 marchRay(in Ray ray) {
             position = position-direction*position.z/direction.z;
             //floor(position.y-direction.y*position.z/direction.z))
 
+            differenceFromPrevious = vec3(0.0f, 0.0f, -1.0f);
+
             vec2 difference = (WORLD_DIMENSIONS/2.0f-position).xy;
             //Rings
             //float distance = sqrt(difference.x*difference.x+difference.y*difference.y);
@@ -248,7 +263,7 @@ vec3 marchRay(in Ray ray) {
 
         ReturnedOctreeNode lowestNode = getLowestOctreeNode(position);
 
-        if (lowestNode.color.a > 0.0f && previousColor != lowestNode.color.rgba) {
+        if (lowestNode.color.a > 0.0f && previousColor != lowestNode.color) {
             returnColor += lowestNode.color.rgb*(1.0f-opacityUsed)*lowestNode.color.a;
             opacityUsed += lowestNode.color.a*(1.0f-opacityUsed);
             
@@ -309,6 +324,8 @@ vec3 marchRay(in Ray ray) {
         return vec3(1.0f, 0.0f, 0.0f);
 
     float brightness = max(dot(differenceFromPrevious, normalize(vec3(-0.5f, -0.9f, -1.0f))), 0.2f);
+    if (MAX_DISTANCE-totalDistance < 0.1f)
+        brightness = 1.0f;
     return returnColor*brightness;//*0.5f+0.5f*vec3(1.0f)*float(stepCount)/100;
     //return vec3(stepCount/50.0f, 1.0f-stepCount/50.0f, 0.0f);
 }

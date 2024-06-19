@@ -52,6 +52,7 @@ namespace VkUtils {
     };
 
     const int VOXEL_GRID_SIZE = 512;
+    const int REGION_COUNT = 225;
     struct UniformBufferObject {
         alignas(16) glm::vec3 position;   
         alignas(16) glm::vec3 viewDirection;

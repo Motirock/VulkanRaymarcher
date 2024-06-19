@@ -45,7 +45,7 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
         throw std::runtime_error("World node cannot be homogeneous");
     }
     else {
-        if (node.childrenIndex+7 >= UINT16_MAX)
+        if (node.childrenIndex+7 >= UINT16_MAX*8)
             throw std::runtime_error("Children index out of bounds");
 
         gpuNode.data |= node.childrenIndex/8;
@@ -77,7 +77,7 @@ GPUOctree::GPUOctree(Octree &octree, const int &nodeSlotsUsed) {
             gpuNode.data |= (uint32_t) (node.color.a * 255) << 24;
         }
         else {
-            if (node.childrenIndex+7 >= UINT16_MAX)
+            if (node.childrenIndex+7 >= UINT16_MAX*8)
                 throw std::runtime_error("Children index out of bounds");
 
             gpuNode.data |= node.childrenIndex/8;

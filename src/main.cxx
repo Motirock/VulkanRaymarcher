@@ -459,7 +459,7 @@ private:
             vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         }
         
-        for (int i = 0; i < VOXEL_GRID_SIZE; i++) {
+        for (int i = 0; i < REGION_COUNT; i++) {
             vkDestroyBuffer(device, octreeStorageBuffers[i], nullptr);
             vkFreeMemory(device, octreeStorageBuffersMemory[i], nullptr);
         }
@@ -804,7 +804,7 @@ private:
         layoutBindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
         layoutBindings[2].binding = 2;
-        layoutBindings[2].descriptorCount = VOXEL_GRID_SIZE;
+        layoutBindings[2].descriptorCount = REGION_COUNT;
         layoutBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         layoutBindings[2].pImmutableSamplers = nullptr;
         layoutBindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -1237,47 +1237,75 @@ private:
 
         std::cout << "\n\n\n" << bufferSize << "\n\n\n" << std::endl;
 
-        octreeStorageBuffers = new VkBuffer[VOXEL_GRID_SIZE];
-        octreeStorageBuffersMemory = new VkDeviceMemory[VOXEL_GRID_SIZE];
+        octreeStorageBuffers = new VkBuffer[REGION_COUNT];
+        octreeStorageBuffersMemory = new VkDeviceMemory[REGION_COUNT];
 
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(physicalDevice, &properties);
 
-        std::cout << bufferSize*512 << ' ' << properties.limits.maxMemoryAllocationCount << ' ' << properties.limits.maxStorageBufferRange << std::endl;
+        std::cout << bufferSize << ' ' << properties.limits.maxMemoryAllocationCount << ' ' << properties.limits.maxStorageBufferRange << std::endl;
 
         const siv::PerlinNoise::seed_type terrainNoiseSeed = 0;
         const siv::PerlinNoise terrainNoise{ terrainNoiseSeed };
         
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, regionStagingBuffer, regionStagingBufferMemory);
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, regionStagingBuffer, regionStagingBufferMemory);
 
         vkMapMemory(device, regionStagingBufferMemory, 0, bufferSize, 0, (void**) &regionStagingBufferMapped);
 
+        uint32_t chunksLoaded = 0;
+        int TEMP = 0;
+        uint32_t totalChunks = WORLD_DIMENSIONS_REGIONS.x*WORLD_DIMENSIONS_REGIONS.y*WORLD_DIMENSIONS_REGIONS.z*REGION_SIZE*REGION_SIZE*REGION_SIZE;
+        uint32_t lastPercentReached = 0;
+        uint64_t totalNodes = 0;
+        uint32_t maxNodesInChunk = 0;
         for (int i = 0; i < WORLD_DIMENSIONS_REGIONS.x; i++) {
             for (int j = 0; j < WORLD_DIMENSIONS_REGIONS.y; j++) {
                 for (int k = 0; k < WORLD_DIMENSIONS_REGIONS.z; k++) {
-                    Region region = Region(glm::vec3(i*REGION_SIZE, j*REGION_SIZE, k*REGION_SIZE));
+                    Region region = Region(glm::vec3(i*REGION_SIZE*CHUNK_SIZE, j*REGION_SIZE*CHUNK_SIZE, k*REGION_SIZE*CHUNK_SIZE));
 
                     region.generateValues(terrainNoise);
+
+                    int bufferIndex = i + j*WORLD_DIMENSIONS_REGIONS.x + k*WORLD_DIMENSIONS_REGIONS.x*WORLD_DIMENSIONS_REGIONS.y;
+                    std::cout << TEMP << '\n';
+                    //  if (TEMP++ >= 20)
+                    //     throw std::runtime_error("Failed to create octree storage buffer!");
+                    createBuffer(bufferSize*512, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, octreeStorageBuffers[bufferIndex], octreeStorageBuffersMemory[bufferIndex]);
 
                     for (int l = 0; l < REGION_SIZE; l++) {
                         for (int m = 0; m < REGION_SIZE; m++) {
                             for (int n = 0; n < REGION_SIZE; n++) {
-                                int bufferIndex = l + m*REGION_SIZE + n*REGION_SIZE*REGION_SIZE;
+                                int bufferOffset = (l + m*REGION_SIZE + n*REGION_SIZE*REGION_SIZE)*bufferSize;
 
                                 Chunk *chunk = region.chunks[l + m*REGION_SIZE + n*REGION_SIZE*REGION_SIZE];
                                 
-                                chunk->createOctree();
+                                int nodesInChunk = chunk->createOctree();
+                                maxNodesInChunk = nodesInChunk > maxNodesInChunk ? nodesInChunk : maxNodesInChunk;
+                                totalNodes += nodesInChunk;
 
-                                std::cout << "Chunk " << i*REGION_SIZE+l << " " << j*REGION_SIZE+m << " " << k*REGION_SIZE+n << " created\n";
+                                //std::cout << "Chunk " << i*REGION_SIZE+l << " " << j*REGION_SIZE+m << " " << k*REGION_SIZE+n << " created\n";
 
                                 memcpy(regionStagingBufferMapped, &chunk->octree, (size_t) bufferSize);
 
-                                createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, octreeStorageBuffers[bufferIndex], octreeStorageBuffersMemory[bufferIndex]);
+                                copyBuffer(regionStagingBuffer, octreeStorageBuffers[bufferIndex], 0, bufferOffset, bufferSize);
+                            
+                                chunksLoaded++;
 
-                                copyBuffer(regionStagingBuffer, octreeStorageBuffers[bufferIndex], 0, 0, bufferSize);
+                                if (chunksLoaded*100/totalChunks > lastPercentReached) {
+                                    lastPercentReached = chunksLoaded*100/totalChunks;
+                                    std::cout << lastPercentReached << "%\t";
+                                    std::cout << totalNodes << '\t';
+                                    std::cout << maxNodesInChunk << '\n';
+                                    // std:: cout << '[';
+                                    // for (int i = 0; i < lastPercentReached; i++)
+                                    //     std::cout << '=';
+                                    // for (int i = lastPercentReached; i < 100; i++)
+                                    //     std::cout << ' ';
+                                    // std::cout << "]\n";
+                                }
                             }
                         }
                     }
+
                 }
             }
         }
@@ -1337,7 +1365,7 @@ private:
         poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
         poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)*VOXEL_GRID_SIZE;
+        poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)*REGION_COUNT;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1425,11 +1453,11 @@ private:
             descriptorWrites[1].descriptorCount = 1;
             descriptorWrites[1].pImageInfo = &storageImageInfoCurrentFrame;
 
-            VkDescriptorBufferInfo octreeStorageBuffersInfo[VOXEL_GRID_SIZE];
-            for (int i = 0; i < VOXEL_GRID_SIZE; i++) {
+            VkDescriptorBufferInfo octreeStorageBuffersInfo[REGION_COUNT];
+            for (int i = 0; i < REGION_COUNT; i++) {
                 octreeStorageBuffersInfo[i].buffer = octreeStorageBuffers[i];
                 octreeStorageBuffersInfo[i].offset = 0;
-                octreeStorageBuffersInfo[i].range = sizeof(GPUOctree);
+                octreeStorageBuffersInfo[i].range = sizeof(GPUOctree)*512;
             }
 
             descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1437,7 +1465,7 @@ private:
             descriptorWrites[2].dstBinding = 2;
             descriptorWrites[2].dstArrayElement = 0;
             descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            descriptorWrites[2].descriptorCount = VOXEL_GRID_SIZE;
+            descriptorWrites[2].descriptorCount = REGION_COUNT;
             descriptorWrites[2].pBufferInfo = octreeStorageBuffersInfo;
 
             vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
@@ -1446,7 +1474,7 @@ private:
     }
 
 
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
@@ -1464,6 +1492,15 @@ private:
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+        // if (properties == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+        //     allocInfo.memoryTypeIndex = 2;//findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        //     std::cout << 'a' << ' ';
+        // }
+
+        // std::cout << '\n';
+        // for (int i = 0; i < 32; i++)
+        //     std::cout << (memRequirements.memoryTypeBits & (1 << i)) << ' ' << allocInfo.memoryTypeIndex;
+        // std::cout << '\n';
 
         if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
             throw std::runtime_error("Failed to allocate buffer memory!");
